@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="FishMonitor logo">
+  <style>
+    .fg{fill:red;stroke:red}
+    .fish{fill:blue;stroke:blue}
+    .text{fill:#0B1F3F}
+    @media (prefers-color-scheme: dark){ .fg{fill:#ffffff;stroke:#ffffff} .text{fill:#ffffff} .fish{fill:lightblue;stroke:lightblue} }
+  </style>
+  <g>
+    <path class="fg" d="M256 84c-74 0-134 60-134 134 0 94 134 226 134 226s134-132 134-226c0-74-60-134-134-134zm0 176c-23 0-42-19-42-42s19-42 42-42 42 19 42 42-19 42-42 42z"/>
+    <g transform="translate(0,6)">
+      <path class="fish" d="M256 190c-34 0-66 20-86 40 20 20 52 40 86 40 25 0 48-8 66-20l24 14-10-28 10-28-24 14c-18-12-41-20-66-20z" opacity="0.9"/>
+      <circle class="fish" cx="288" cy="210" r="6"/>
+    </g>
+  </g>
+  <text class="text" x="256" y="482" font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="48" text-anchor="middle">FishMonitor</text>
+</svg>

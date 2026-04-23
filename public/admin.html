@@ -1,0 +1,1579 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a84ff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; img-src 'self' data: blob: https: *;" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="apple-touch-icon" href="/logo.svg" />
+    <title>Admin Dashboard</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+      :root {
+        --primary: #007aff;
+        --primary-hover: #0056b3;
+        --surface: #ffffff;
+        --background: #f5f5f7;
+        --text-main: #1d1d1f;
+        --text-muted: #86868b;
+        --border: #d2d2d7;
+        --success: #34c759;
+        --error: #ff3b30;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+        --shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);
+        --radius: 16px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #1c1c1e;
+          --background: #000000;
+          --text-main: #f5f5f7;
+          --text-muted: #86868b;
+          --border: #424245;
+        }
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        margin: 0;
+        background-color: var(--background);
+        color: var(--text-main);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      body.auth-bg {
+        background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('/assets/auth-bg.jpg');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: var(--surface);
+        padding: 12px 24px;
+        box-shadow: var(--shadow-sm);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      .topbar img { height: 32px; }
+      .topbar .title { font-size: 20px; font-weight: 700; color: var(--text-main); }
+      .logout_btn {
+        margin-left: auto;
+        background: transparent;
+        color: var(--error);
+        border: 1px solid var(--error);
+        border-radius: 20px;
+        padding: 6px 16px;
+        font-size: 13px;
+        box-shadow: none;
+      }
+      .logout_btn:hover { background: rgba(255, 59, 48, 0.1); transform: none; box-shadow: none; }
+      
+      a { color: var(--primary); text-decoration: none; font-weight: 500; }
+      a:hover { text-decoration: underline; }
+      
+      input, button, select, textarea {
+        padding: 12px 16px;
+        margin: 8px 0;
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text-main);
+        font-size: 14px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        font-family: inherit;
+        width: 100%;
+      }
+      input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+      }
+      
+      button {
+        background: var(--primary);
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        box-shadow: var(--shadow-sm);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      button:hover { background: var(--primary-hover); transform: translateY(-1px); box-shadow: var(--shadow); }
+      button:active { transform: translateY(0); }
+      
+      table { border-collapse: separate; border-spacing: 0; width: 100%; margin-top: 16px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+      th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+      th { background: rgba(0,0,0,0.02); font-weight: 800; color: var(--primary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      tr:last-child td { border-bottom: none; }
+      tr:hover td { background: rgba(0,0,0,0.01); }
+      td button { padding: 6px 12px; font-size: 12px; margin: 2px; height: auto; border-radius: 8px; width: auto; box-shadow: none; border: 1px solid rgba(0,0,0,0.1); }
+      
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        padding: 32px;
+        margin: 24px 0;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+      }
+      .card h2 { margin-top: 0; font-size: 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+      .small { font-size: 13px; color: var(--text-muted); }
+
+      #user_map { width: 100%; height: 540px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+
+      #login_card { max-width: 400px; margin: 80px auto; display: block; text-align: center; padding: 40px; border-radius: 24px; }
+      #login_card h2 { margin-top: 0; font-size: 24px; font-weight: 700; color: var(--text-main); justify-content: center; margin-bottom: 8px; }
+      #login_card input { width: 100%; height: 48px; font-size: 16px; }
+      #login_card button { width: 100%; height: 48px; margin-top: 16px; font-size: 16px; border-radius: 12px; }
+      
+      .layout { display: grid; grid-template-columns: 280px 1fr; gap: 32px; align-items: start; padding: 32px; max-width: 1600px; margin: 0 auto; }
+      @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 16px; gap: 16px; } }
+      
+      #sidebar { position: sticky; top: 90px; }
+      #sidebar .group {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #sidebar button {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        text-align: left;
+        padding: 12px 16px;
+        margin: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text-muted);
+        box-shadow: none;
+        font-weight: 500;
+        border: 1px solid transparent;
+        height: auto;
+      }
+      #sidebar button:hover { background: rgba(0,0,0,0.03); color: var(--primary); }
+      #sidebar button.active { background: rgba(0, 122, 255, 0.08); color: var(--primary); font-weight: 600; border-color: rgba(0, 122, 255, 0.1); }
+      #sidebar button .icon { font-size: 18px; width: 24px; text-align: center; }
+      
+      .collapsible.open .collapsible-content { display: block !important; }
+      .collapsible.open .fa-chevron-down { transform: rotate(180deg); }
+      .collapsible-header i { transition: transform 0.2s; }
+      .collapsible-content { display: none; border-top: 1px solid var(--border); }
+      
+      #content_top { display: flex; justify-content: flex-end; margin-bottom: 24px; gap: 12px; }
+      #menu_btn, #refresh_btn {
+        background: var(--surface);
+        color: var(--text-main);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-weight: 500;
+        box-shadow: var(--shadow-sm);
+        width: auto;
+        height: auto;
+      }
+      #menu_btn:hover, #refresh_btn:hover { background: var(--background); border-color: var(--text-muted); }
+      
+      #drawer_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 999; backdrop-filter: blur(2px); }
+      @media (max-width: 900px) {
+        #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-105%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow); margin: 0; padding: 0; background: var(--surface); border-right: 1px solid var(--border); z-index: 1000; width: 280px; }
+        #sidebar .group { border: none; box-shadow: none; border-radius: 0; height: 100%; padding: 24px 16px; }
+        #sidebar.open { transform: translateX(0); }
+        #drawer_overlay.show { display: block; }
+      }
+      
+      .passwrap { display: flex; align-items: center; width: 100%; position: relative; margin: 8px 0; }
+      .passwrap input { padding-right: 48px; margin: 0 !important; width: 100%; }
+      .passwrap .toggle-eye { position: absolute !important; right: 8px !important; top: 50% !important; transform: translateY(-50%) !important; background: transparent !important; color: var(--text-muted) !important; border: none !important; padding: 4px !important; height: 32px !important; width: 32px !important; box-shadow: none !important; margin: 0 !important; min-width: unset !important; z-index: 10 !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 16px !important; border-radius: 8px !important; cursor: pointer !important; }
+      .passwrap .toggle-eye:hover { color: var(--text-main) !important; background: rgba(0,0,0,0.05) !important; transform: translateY(-50%) !important; box-shadow: none !important; }
+      
+      #sos_overlay, #confirm_overlay, #history_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+      #sos_popup, #confirm_popup, #history_popup {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        max-width: 480px;
+        width: calc(100% - 32px);
+        padding: 32px;
+        animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      #sos_popup h3 { margin-top: 0; font-size: 22px; font-weight: 700; color: var(--error); display: flex; align-items: center; gap: 12px; }
+      #sos_popup .meta { font-size: 14px; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+      
+      .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; padding: 24px; background: var(--background); border-radius: 16px; border: 1px solid var(--border); }
+      .grid-form input, .grid-form select, .grid-form button { margin: 0; width: 100%; }
+      .grid-form button { height: 44px; font-weight: 600; }
+      
+      
+      
+      @keyframes popIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+      }
+    </style>
+  </head>
+  <body class="auth-bg">
+    <div class="topbar"><img src="/logo.svg" alt="FishMonitor"/><span class="title">Admin Dashboard</span><button id="logout_btn" class="logout_btn" style="display:none" onclick="logoutAdmin()">Logout</button></div>
+    <div id="sos_overlay"><div id="sos_popup"></div></div>
+    <div id="confirm_overlay"><div id="confirm_popup"></div></div>
+    <div id="history_overlay"><div id="history_popup"></div></div>
+    <div class="card" id="login_card">
+      <div style="text-align:center; margin-bottom:24px">
+        <img src="/logo.svg" alt="Logo" style="width:64px; height:64px; margin-bottom:16px" />
+        <h1 style="font-size:24px; font-weight:800; margin:0; color:var(--text-main)">Fish Monitor</h1>
+        <p class="small" style="margin-top:8px">Admin Access</p>
+      </div>
+      
+      <div style="text-align:left; margin-bottom:16px">
+        <label class="small" style="font-weight:600; margin-bottom:4px; display:block">Email Address</label>
+        <input id="email" placeholder="admin@example.com" />
+      </div>
+
+      <div style="text-align:left; margin-bottom:24px">
+        <label class="small" style="font-weight:600; margin-bottom:4px; display:block">Password</label>
+        <div class="passwrap">
+          <input id="pass" type="password" placeholder="Password" />
+          <button id="admin_pass_toggle" class="toggle-eye" onclick="togglePassword('pass','admin_pass_toggle')">🔒</button>
+        </div>
+      </div>
+
+      <button onclick="loginAdmin()">Login</button>
+      <div id="msg" class="small" style="margin-top:16px; min-height:20px"></div>
+    </div>
+
+    <div class="layout" id="admin_app" style="display:none">
+      <div id="drawer_overlay" onclick="toggleDrawer(false)"></div>
+      <div id="sidebar" role="navigation" aria-label="Admin menu">
+        <div class="group">
+          <button data-module="mod_users" onclick="showAdminModule('mod_users')"><i class="fa-solid fa-users icon"></i> Users</button>
+          <button data-module="mod_catches" onclick="showAdminModule('mod_catches')"><i class="fa-solid fa-fish icon"></i> Catches</button>
+          <button data-module="mod_tracks" onclick="showAdminModule('mod_tracks')"><i class="fa-solid fa-route icon"></i> Tracks</button>
+          <button data-module="mod_map" onclick="showAdminModule('mod_map')"><i class="fa-solid fa-map-location-dot icon"></i> Map</button>
+          <button data-module="mod_species" onclick="showAdminModule('mod_species')"><i class="fa-solid fa-fish-fins icon"></i> Species</button>
+          <button data-module="mod_zones" onclick="showAdminModule('mod_zones')"><i class="fa-solid fa-shield-halved icon"></i> Protected Zones</button>
+          <button data-module="mod_alerts" onclick="showAdminModule('mod_alerts')"><i class="fa-solid fa-bell icon"></i> Alerts</button>
+          <button data-module="mod_exports" onclick="showAdminModule('mod_exports')"><i class="fa-solid fa-file-export icon"></i> Exports</button>
+          <button data-module="mod_live" onclick="showAdminModule('mod_live')"><i class="fa-solid fa-satellite-dish icon"></i> Live</button>
+          <button data-module="mod_activity" onclick="showAdminModule('mod_activity')"><i class="fa-solid fa-water icon"></i> Activity</button>
+        </div>
+      </div>
+      <div id="content">
+      <div id="content_top"><button id="menu_btn" onclick="toggleDrawer(true)"><img src="/logo.svg" alt="" style="height:18px"/> Home</button><button id="refresh_btn" onclick="refreshDataAdmin()"><i class="fa-solid fa-rotate-right"></i> Refresh</button><button id="install_btn_admin" style="display:none" onclick="installAdminApp()"><i class="fa-solid fa-download"></i> Install App</button></div>
+        <div class="card" id="mod_users" style="display:none">
+          <h2><i class="fa-solid fa-users" style="color:var(--primary)"></i> Users</h2>
+          
+          <div style="background: var(--background); padding: 16px; border-radius: 12px; margin-bottom: 24px;">
+            <div style="font-weight: 600; font-size: 12px; margin-bottom: 12px; color: var(--text-muted); letter-spacing: 0.5px;">CREATE NEW ACCOUNT</div>
+            <div class="grid-form" style="margin: 0; padding: 0; background: transparent; border: none;">
+              <input id="newUserName" placeholder="Name" />
+              <input id="newUserEmail" placeholder="Email" />
+              <div class="passwrap" style="margin:0">
+                <input id="newUserPass" type="password" placeholder="Password" />
+                <button id="new_user_pass_toggle" class="toggle-eye" onclick="togglePassword('newUserPass','new_user_pass_toggle')">🔒</button>
+              </div>
+              <select id="newUserRole" style="margin:0"><option>fisher</option><option>inspector</option><option>researcher</option><option>admin</option></select>
+              <button onclick="addUser()" style="margin:0"><i class="fa-solid fa-plus"></i> Create User</button>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px;">
+             <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Registered Users</h3>
+             <div style="position: relative; width: 320px;">
+                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
+                <input id="userSearch" placeholder="Search by name, email or role..." oninput="filterUsers()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+             </div>
+          </div>
+
+          <table id="users"></table>
+        </div>
+
+        <div class="card" id="mod_catches" style="display:none">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin:0"><i class="fa-solid fa-fish" style="color:var(--primary)"></i> All Catches</h2>
+            <div style="position: relative; width: 320px;">
+              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
+              <input id="catchSearch" placeholder="Search by species, user, vessel..." oninput="filterCatches()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+            </div>
+          </div>
+          <table id="catches"></table>
+        </div>
+
+        <div class="card" id="mod_tracks" style="display:none">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin:0"><i class="fa-solid fa-route" style="color:var(--primary)"></i> GPS Tracks</h2>
+            <div style="position: relative; width: 320px;">
+              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
+              <input id="trackSearch" placeholder="Search by user name or email..." oninput="filterTracks()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+            </div>
+          </div>
+          <table id="tracks"></table>
+        </div>
+
+        <div class="card" id="mod_map" style="display:none">
+          <h2><i class="fa-solid fa-map-location-dot" style="color:var(--primary)"></i> Live User Map</h2>
+          <div class="grid-form" style="grid-template-columns: auto auto 1fr;">
+            <button onclick="refreshUserMap(true)"><i class="fa-solid fa-rotate"></i> Refresh Locations</button>
+            <button onclick="fitUserMap()"><i class="fa-solid fa-up-right-and-down-left-from-center"></i> Fit All</button>
+            <div class="small" id="user_map_status" style="display:flex; align-items:center"></div>
+          </div>
+          <div id="user_map"></div>
+        </div>
+
+        <div class="card" id="mod_species" style="display:none">
+          <h2><i class="fa-solid fa-fish-fins" style="color:var(--primary)"></i> Species</h2>
+          <div class="grid-form" style="grid-template-columns: 1fr auto auto;">
+            <input id="speciesName" placeholder="New species" />
+            <button onclick="addSpecies()"><i class="fa-solid fa-plus"></i> Add</button>
+            <button onclick="reloadSpecies()"><i class="fa-solid fa-rotate"></i> Reload</button>
+          </div>
+          <ul id="speciesList" style="list-style:none; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px"></ul>
+        </div>
+
+        <div class="card" id="mod_zones" style="display:none">
+          <h2><i class="fa-solid fa-shield-halved" style="color:var(--primary)"></i> Protected Zones</h2>
+          
+          <div style="display:grid; grid-template-columns: 1fr 350px; gap: 24px; margin-bottom: 24px">
+            <div id="zone_map" style="width:100%; height:500px; border-radius:12px; overflow:hidden; border:1px solid var(--border);"></div>
+            
+            <div style="display:flex; flex-direction:column; gap:16px">
+              <div class="small" style="background:#eff6ff; padding:12px; border-radius:8px; border:1px solid #dbeafe; color:#1e40af">
+                  <i class="fa-solid fa-circle-info"></i> <b>How to create a zone:</b><br/>
+                  1. Click "Start Drawing"<br/>
+                  2. Click on the map to add points<br/>
+                  3. Double-click to finish the polygon
+              </div>
+              
+              <div style="display:flex; gap:8px">
+                <button id="btn_draw_start" onclick="startDrawingZone()" style="flex:1"><i class="fa-solid fa-pencil"></i> Start Drawing</button>
+                <button id="btn_draw_clear" onclick="clearDrawnZone()" style="flex:1; background:var(--background); color:var(--text-main); border:1px solid var(--border)"><i class="fa-solid fa-trash"></i> Clear</button>
+              </div>
+
+              <div class="grid-form" style="margin:0; padding:0; background:transparent; border:none; display:flex; flex-direction:column; gap:8px">
+                  <label class="small" style="font-weight:600">Zone Name</label>
+                  <input id="zoneName" placeholder="e.g. Restricted Fishing Area A" />
+                  <button id="btn_save_zone" onclick="addZone()" style="width:100%"><i class="fa-solid fa-plus"></i> Save Zone</button>
+                  <button id="btn_cancel_edit_zone" onclick="cancelEditZone()" style="width:100%; display:none; background:var(--background); color:var(--text-main); border:1px solid var(--border); box-shadow:none"><i class="fa-solid fa-times"></i> Cancel Edit</button>
+              </div>
+
+              <div class="collapsible" style="border:1px solid var(--border); border-radius:8px; overflow:hidden">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')" style="padding:10px 12px; background:var(--background); cursor:pointer; display:flex; justify-content:space-between; align-items:center">
+                  <span class="small" style="font-weight:600">Advanced GeoJSON / Rules</span>
+                  <i class="fa-solid fa-chevron-down small"></i>
+                </div>
+                <div class="collapsible-content" style="padding:12px;">
+                  <textarea id="zoneJson" placeholder="GeoJSON will appear here..." style="width:100%;height:100px;resize:vertical;font-size:11px;font-family:monospace;margin-bottom:8px"></textarea>
+                  <textarea id="zoneRules" placeholder='Rules JSON (optional), e.g. {"no_entry":true}' style="width:100%;height:60px;resize:vertical;font-size:11px;font-family:monospace"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <h3 style="font-size:16px; margin-bottom:12px">Existing Protected Zones</h3>
+          <div id="zoneListContainer" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px"></div>
+          <ul id="zoneList" style="display:none"></ul>
+        </div>
+
+        <div class="card" id="mod_alerts" style="display:none">
+          <h2><i class="fa-solid fa-bell" style="color:var(--primary)"></i> Alerts</h2>
+          <table id="alerts"></table>
+        </div>
+
+        <div class="card" id="mod_exports" style="display:none">
+          <h2><i class="fa-solid fa-file-export" style="color:var(--primary)"></i> Exports</h2>
+          <div style="background:var(--background); padding:24px; border-radius:12px; text-align:center">
+             <i class="fa-solid fa-file-excel" style="font-size:48px; color:var(--success); margin-bottom:16px"></i>
+             <p>Download complete database export including users, catches, and activity logs.</p>
+             <button onclick="downloadExcel()" style="width:auto; padding:12px 32px"><i class="fa-solid fa-download"></i> Download Excel</button>
+          </div>
+        </div>
+
+        <div class="card" id="mod_live" style="display:none">
+          <h2><i class="fa-solid fa-satellite-dish" style="color:var(--primary)"></i> Live Tracking</h2>
+          <div class="grid-form">
+            <button onclick="ensureLive(true)"><i class="fa-solid fa-sync"></i> Reconnect Live Stream</button>
+          </div>
+          <div id="live_log" class="small" style="background:var(--background); border:1px solid var(--border); border-radius:12px; padding:12px; min-height:80px"></div>
+        </div>
+
+        <div class="card" id="mod_activity" style="display:none">
+          <h2><i class="fa-solid fa-water" style="color:var(--primary)"></i> Coastal Activity</h2>
+          <div class="grid-form" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+            <select id="actFilterCat">
+              <option value="">All categories</option>
+              <option value="fishing">Fishing Activities</option>
+              <option value="environmental">Environmental Activities</option>
+              <option value="tourism">Tourism & Recreational Activities</option>
+              <option value="maritime">Maritime & Transport Activities</option>
+              <option value="illegal">Illegal or Risky Activities</option>
+            </select>
+            <select id="actFilterType"></select>
+            <input id="actFrom" type="date"/>
+            <input id="actTo" type="date"/>
+            <button onclick="loadActivity()"><i class="fa-solid fa-filter"></i> Load Activity</button>
+            <button onclick="loadInsights()"><i class="fa-solid fa-chart-pie"></i> Insights</button>
+          </div>
+          <table id="activityLogs"></table>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const state = { token: null, species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, sosCurrent: null, mapPollTimer: null, liveEvents: [], statusByUserId: new Map() }
+      ;(function(){
+        const qp = new URLSearchParams(location.search); const t = qp.get('token'); if (t) {
+          state.token = t
+          document.body.classList.remove('auth-bg')
+          document.getElementById('login_card').style.display='none'
+          document.getElementById('admin_app').style.display=''
+          document.getElementById('msg').textContent=''
+          document.getElementById('logout_btn').style.display=''
+          showAdminModule('mod_users')
+          loadData()
+          setupAutoRefreshAdmin()
+        }
+      })()
+      async function loginAdmin() {
+        try {
+          const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: document.getElementById('email').value.trim(), password: document.getElementById('pass').value }) })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Login failed')
+          if (d.user.role !== 'admin') throw new Error('Not an admin account')
+          state.token = d.token
+          document.body.classList.remove('auth-bg')
+          document.getElementById('login_card').style.display = 'none'
+          document.getElementById('admin_app').style.display = ''
+          document.getElementById('msg').textContent = ''
+          document.getElementById('logout_btn').style.display = ''
+          showAdminModule('mod_users')
+          loadData()
+        } catch (e) {
+          document.getElementById('msg').textContent = e.message
+        }
+      }
+      function logoutAdmin(){
+        state.token = null
+        if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
+        stopUserMapPolling()
+        try { if (window._liveES) { window._liveES.close(); window._liveES = null } } catch {}
+        document.getElementById('logout_btn').style.display = 'none'
+        document.getElementById('admin_app').style.display = 'none'
+        document.getElementById('login_card').style.display = ''
+        document.body.classList.add('auth-bg')
+        location.href = '/admin'
+      }
+      async function installAdmin(){
+        try {
+          const email = document.getElementById('email').value || 'admin@local.test'
+          const pass = document.getElementById('pass').value || 'admin123'
+          const r = await fetch('/api/public/install_admin', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email, password: pass, name:'Administrator' }) })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Install failed')
+          document.getElementById('msg').textContent = 'Admin installed. Logging in...'
+          await loginAdmin()
+        } catch (e) {
+          document.getElementById('msg').textContent = e.message
+        }
+      }
+      function showAdminModule(id) {
+        const ids = ['mod_users','mod_catches','mod_tracks','mod_map','mod_species','mod_zones','mod_alerts','mod_exports','mod_live','mod_activity']
+        ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
+        const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
+        state.currentModule = id
+        if (id === 'mod_map') { setTimeout(initUserMap, 50); startUserMapPolling() } else { stopUserMapPolling() }
+        if (id === 'mod_zones') { setTimeout(initZoneMap, 50) }
+        if (window.matchMedia('(max-width: 900px)').matches) toggleDrawer(false)
+      }
+      function startUserMapPolling() {
+        if (state.mapPollTimer) return
+        state.mapPollTimer = setInterval(() => {
+          if (state.currentModule !== 'mod_map') return
+          try { refreshUserMap(false) } catch {}
+        }, 5000)
+      }
+      function stopUserMapPolling() {
+        if (!state.mapPollTimer) return
+        clearInterval(state.mapPollTimer)
+        state.mapPollTimer = null
+      }
+      function refreshDataAdmin(){
+        if (!state.token) return
+        // Don't auto-refresh if the user is currently editing a catch
+        if (document.querySelector('tr[data-id] select')) return
+        try { loadData() } catch {}
+        const m = state.currentModule
+        if (m === 'mod_activity') { try { loadActivity() } catch {} }
+      }
+      function setupAutoRefreshAdmin(){
+        if (state.refreshTimer) clearInterval(state.refreshTimer)
+        state.refreshTimer = setInterval(refreshDataAdmin, 30000)
+      }
+      function toggleDrawer(open) {
+        const sb = document.getElementById('sidebar')
+        const ov = document.getElementById('drawer_overlay')
+        if (open) { sb.classList.add('open'); ov.classList.add('show') } else { sb.classList.remove('open'); ov.classList.remove('show') }
+      }
+      window.addEventListener('keydown', function(e){ if (e.key === 'Escape') toggleDrawer(false) })
+      async function loadData() {
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        const ur = await fetch('/api/admin/users', { headers }); const users = await ur.json(); state.users = users
+        const cr = await fetch('/api/catches', { headers }); state.catches = await cr.json()
+        const ir = await fetch('/api/images', { headers }); const images = await ir.json(); state.images = images
+        const imgsByCatch = {}
+        images.forEach(i => { const k = i.catch_id; if (!imgsByCatch[k]) imgsByCatch[k] = []; imgsByCatch[k].push(i) })
+        state.imgsByCatch = imgsByCatch
+        const tr = await fetch('/api/admin/tracks', { headers }); state.tracks = await tr.json()
+        const sr = await fetch('/api/admin/species', { headers }); const species = await sr.json(); state.species = species
+        const zr = await fetch('/api/admin/protected_areas', { headers }); const zones = await zr.json(); state.zones = zones
+        const ar = await fetch('/api/admin/alerts', { headers }); const alerts = await ar.json(); state.alerts = alerts
+        
+        filterUsers()
+        filterCatches()
+        filterTracks()
+        
+        const sl = document.getElementById('speciesList'); sl.innerHTML = ''
+        species.forEach(s => sl.innerHTML += `<li>${s} <button onclick="removeSpecies('${s}')">Remove</button></li>`)
+        
+        updateZoneListUi()
+        renderZonesOnMap()
+        
+        const at = document.getElementById('alerts'); at.innerHTML = '<tr><th>Type</th><th>Status</th><th>User</th><th>Coords</th><th>Time</th><th>Action</th></tr>'
+        alerts.forEach(a => {
+          const u = (state.users||[]).find(x => x.id === a.userId)
+          const uname = u ? u.name : a.userId
+          const actions = (a.status==='resolved' ? '' : (a.status==='acknowledged' ? `<button onclick="resolveAlert('${a.id}')">Resolve</button>` : `<button onclick="acknowledgeAlert('${a.id}')">Acknowledge</button> <button onclick="resolveAlert('${a.id}')">Resolve</button>`)) + ` <button onclick="confirmDeleteAlert('${a.id}')">Delete</button>`
+          
+          let typeStyle = ''
+          if (a.type === 'Status: Active') typeStyle = 'background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+          else if (a.type === 'Status: In Port') typeStyle = 'background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+          else if (a.type === 'Status: In Transit') typeStyle = 'background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+          else if (a.type === 'SOS') typeStyle = 'background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+          
+          const typeDisplay = typeStyle ? `<span style="${typeStyle}">${a.type}</span>` : a.type
+          
+          at.innerHTML += `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</td><td>${new Date(a.recordedAt).toLocaleString()}</td><td>${actions}</td></tr>`
+        })
+        try {
+          const pendingSos = (alerts||[]).filter(a => a.type==='SOS' && String(a.status||'').toLowerCase()==='pending')
+          if (pendingSos.length && !state.sosCurrent) showSosPopup(pendingSos[0])
+        } catch {}
+        loadActivity()
+        ensureLive()
+      }
+
+      async function addSpecies() {
+        const name = document.getElementById('speciesName').value
+        await fetch('/api/admin/species', { method:'POST', headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + state.token }, body: JSON.stringify({ name }) }); loadData()
+      }
+      async function reloadSpecies() { loadData() }
+      async function removeSpecies(name) { await fetch('/api/admin/species', { method:'DELETE', headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+state.token }, body: JSON.stringify({ name }) }); loadData() }
+      async function addUser() {
+        const name = document.getElementById('newUserName').value
+        const email = document.getElementById('newUserEmail').value
+        const pass = document.getElementById('newUserPass').value
+        const role = document.getElementById('newUserRole').value
+        await fetch('/api/admin/users', { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, body: JSON.stringify({ name, email, password: pass, role }) }); 
+        
+        // Clear form
+        document.getElementById('newUserName').value = ''
+        document.getElementById('newUserEmail').value = ''
+        document.getElementById('newUserPass').value = ''
+        document.getElementById('userSearch').value = ''
+        
+        loadData()
+      }
+      async function changeRole(id, role) { await fetch('/api/admin/users/'+id+'/role', { method:'PATCH', headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, body: JSON.stringify({ role }) }); }
+      async function deleteUser(id) { 
+        await fetch('/api/admin/users/'+id, { method:'DELETE', headers:{ 'Authorization':'Bearer '+state.token } }); 
+        document.getElementById('userSearch').value = ''
+        loadData() 
+      }
+
+      function renderUsers(users) {
+        const ut = document.getElementById('users')
+        if (!ut) return
+        ut.innerHTML = '<tr><th>Name</th><th>Email</th><th>Barangay</th><th>Role</th><th>Created</th><th>Action</th></tr>'
+        if (!users || users.length === 0) {
+          ut.innerHTML += '<tr><td colspan="6" style="text-align:center; padding: 24px; color: var(--text-muted);">No users found.</td></tr>'
+          return
+        }
+        users.forEach(u => {
+          ut.innerHTML += `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.barangay||''}</td><td><select onchange="changeRole('${u.id}', this.value)"><option ${u.role==='admin'?'selected':''}>admin</option><option ${u.role==='inspector'?'selected':''}>inspector</option><option ${u.role==='fisher'?'selected':''}>fisher</option><option ${u.role==='researcher'?'selected':''}>researcher</option></select></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${u.role==='admin'?'<span class="small">protected</span>':`<button onclick="deleteUser('${u.id}')">Delete</button>`}</td></tr>`
+        })
+      }
+
+      function filterUsers() {
+        const q = document.getElementById('userSearch').value.toLowerCase().trim()
+        if (!q) {
+          renderUsers(state.users)
+          return
+        }
+        const filtered = (state.users || []).filter(u => 
+          (u.name || '').toLowerCase().includes(q) || 
+          (u.email || '').toLowerCase().includes(q) || 
+          (u.barangay || '').toLowerCase().includes(q) ||
+          (u.role || '').toLowerCase().includes(q)
+        )
+        renderUsers(filtered)
+      }
+
+      function renderCatches(catches) {
+        const ct = document.getElementById('catches')
+        if (!ct) return
+        ct.innerHTML = '<tr><th>User</th><th>Photo</th><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
+        if (!catches || catches.length === 0) {
+          ct.innerHTML += '<tr><td colspan="10" style="text-align:center; padding: 24px; color: var(--text-muted);">No catches found.</td></tr>'
+          return
+        }
+        const imgsByCatch = state.imgsByCatch || {}
+        catches.forEach(c => {
+          const img = (imgsByCatch[c.id] && imgsByCatch[c.id][0]) ? imgsByCatch[c.id][0] : null
+          const thumb = img ? `<a target="_blank" href="${img.bucket_key}"><img src="${img.bucket_key}" style="height:40px;border-radius:4px"/></a>` : ''
+          const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
+          ct.innerHTML += `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="ng">${netGear}</td><td class="vs">${c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+        })
+      }
+
+      function filterCatches() {
+        const q = document.getElementById('catchSearch').value.toLowerCase().trim()
+        if (!q) {
+          renderCatches(state.catches)
+          return
+        }
+        const filtered = (state.catches || []).filter(c => 
+          (c.species || '').toLowerCase().includes(q) || 
+          (c.user ? c.user.name : '').toLowerCase().includes(q) || 
+          (c.vessel || '').toLowerCase().includes(q) ||
+          (c.netType || '').toLowerCase().includes(q) ||
+          (c.gear || '').toLowerCase().includes(q) ||
+          (c.note || '').toLowerCase().includes(q)
+        )
+        renderCatches(filtered)
+      }
+
+      function renderTracks(tracks) {
+        const tt = document.getElementById('tracks')
+        if (!tt) return
+        tt.innerHTML = '<tr><th>User</th><th>Coords</th><th>Recorded</th><th>Action</th></tr>'
+        if (!tracks || tracks.length === 0) {
+          tt.innerHTML += '<tr><td colspan="4" style="text-align:center; padding: 24px; color: var(--text-muted);">No tracks found.</td></tr>'
+          return
+        }
+        tracks.forEach(t => {
+          tt.innerHTML += `<tr><td>${t.user ? t.user.name : t.userId}</td><td><a target="_blank" href="https://maps.google.com/?q=${t.lat},${t.lng}">${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}</a></td><td>${new Date(t.recordedAt).toLocaleString()}</td><td><button onclick="confirmDeleteTrack('${t.id}')">Delete</button></td></tr>`
+        })
+      }
+
+      function filterTracks() {
+        const q = document.getElementById('trackSearch').value.toLowerCase().trim()
+        if (!q) {
+          renderTracks(state.tracks)
+          return
+        }
+        const filtered = (state.tracks || []).filter(t => 
+          (t.user ? t.user.name : '').toLowerCase().includes(q) || 
+          (t.user ? t.user.email : '').toLowerCase().includes(q) ||
+          (t.userId || '').toLowerCase().includes(q)
+        )
+        renderTracks(filtered)
+      }
+
+      function startEditCatch(id, species, note, weight, length, gear, vessel) {
+        const row = document.querySelector(`tr[data-id="${id}"]`); if (!row) return
+        const sp = row.querySelector('.sp'); 
+        const wt = row.querySelector('.wt'); 
+        const ln = row.querySelector('.ln');
+        const vs = row.querySelector('.vs');
+        const act = row.querySelector('.act')
+        
+        const selId = `sp_${id}`; 
+        const noteId = `note_${id}`;
+        const wtId = `wt_${id}`;
+        const lnId = `ln_${id}`;
+        const vsId = `vs_${id}`;
+        
+        const opts = (state.species||[]).map(s => `<option ${s===species?'selected':''}>${s}</option>`).join('') || `<option ${species?'selected':''}>${species||'unknown'}</option>`
+        
+        sp.innerHTML = `<select id="${selId}" style="width:100%">${opts}</select><br/><input id="${noteId}" placeholder="Note" value="${note||''}" style="margin-top:4px; width:100%"/>`
+        wt.innerHTML = `<input id="${wtId}" type="number" step="0.01" value="${weight||''}" style="width:60px"/>`
+        ln.innerHTML = `<input id="${lnId}" type="number" step="0.1" value="${length||''}" style="width:60px"/>`
+        vs.innerHTML = `<input id="${vsId}" value="${vessel||''}" style="width:100%"/>`
+        
+        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${vsId}')">Save</button> <button onclick="loadData()">Cancel</button>`
+      }
+      async function saveCatch(id, selId, noteId, wtId, lnId, vsId) {
+        const species = document.getElementById(selId).value
+        const note = document.getElementById(noteId).value
+        const weightKg = parseFloat(document.getElementById(wtId).value) || null
+        const lengthCm = parseFloat(document.getElementById(lnId).value) || null
+        const vessel = document.getElementById(vsId).value || null
+        
+        await fetch('/api/admin/catches/'+id, { 
+          method:'PATCH', 
+          headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, 
+          body: JSON.stringify({ species, note, weightKg, lengthCm, vessel }) 
+        })
+        loadData()
+      }
+      async function deleteCatch(id) { 
+        if (!confirm('Delete this catch?')) return
+        await fetch('/api/admin/catches/'+id, { method:'DELETE', headers:{ 'Authorization':'Bearer '+state.token } }); 
+        document.getElementById('catchSearch').value = ''
+        loadData() 
+      }
+      async function addZone() {
+        try {
+          const id = state.editingZoneId
+          const name = document.getElementById('zoneName').value || 'New Zone'
+          const zoneEl = document.getElementById('zoneJson')
+          const rulesEl = document.getElementById('zoneRules')
+          const raw = (zoneEl && zoneEl.value ? zoneEl.value : '').trim()
+          const rulesText = (rulesEl && rulesEl.value ? rulesEl.value : '').trim()
+          if (!raw) {
+            if (zoneEl) zoneEl.focus()
+            throw new Error('GeoJSON is required')
+          }
+          let parsed = null
+          try {
+            parsed = JSON.parse(raw)
+          } catch {
+            if (zoneEl) zoneEl.focus()
+            throw new Error('Invalid GeoJSON JSON')
+          }
+          let geometry = null
+          if (parsed && parsed.type === 'Feature' && parsed.geometry) {
+            geometry = parsed.geometry
+          } else if (parsed && (parsed.type === 'Polygon' || parsed.type === 'MultiPolygon')) {
+            geometry = parsed
+          } else {
+            throw new Error('Invalid GeoJSON: provide Feature or Polygon')
+          }
+          let rules = null
+          if (rulesText) {
+            try {
+              rules = JSON.parse(rulesText)
+            } catch {
+              if (rulesEl) rulesEl.focus()
+              throw new Error('Invalid Rules JSON')
+            }
+          }
+          
+          const headers = { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + state.token }
+          const body = JSON.stringify({ name, geom: geometry, rules })
+          
+          if (id) {
+            await fetch('/api/admin/protected_areas/'+id, { method:'PATCH', headers, body })
+          } else {
+            await fetch('/api/admin/protected_areas', { method:'POST', headers, body })
+          }
+          
+          cancelEditZone()
+          loadData()
+        } catch (e) { alert(e.message || 'Invalid JSON') }
+      }
+
+      function editZone(id) {
+        const z = state.zones.find(x => x.id === id)
+        if (!z) return
+        state.editingZoneId = id
+        document.getElementById('zoneName').value = z.name || ''
+        document.getElementById('zoneJson').value = JSON.stringify(z.geom, null, 2)
+        document.getElementById('zoneRules').value = z.rules ? JSON.stringify(z.rules, null, 2) : ''
+        
+        document.getElementById('btn_save_zone').innerHTML = '<i class="fa-solid fa-save"></i> Update Zone'
+        document.getElementById('btn_cancel_edit_zone').style.display = 'block'
+        
+        const coll = document.querySelector('.collapsible')
+        if (coll) coll.classList.add('open')
+        
+        zoomToZone(id)
+      }
+
+      function cancelEditZone() {
+        state.editingZoneId = null
+        document.getElementById('zoneName').value = ''
+        document.getElementById('zoneJson').value = ''
+        document.getElementById('zoneRules').value = ''
+        
+        document.getElementById('btn_save_zone').innerHTML = '<i class="fa-solid fa-plus"></i> Save Zone'
+        document.getElementById('btn_cancel_edit_zone').style.display = 'none'
+        
+        const coll = document.querySelector('.collapsible')
+        if (coll) coll.classList.remove('open')
+        
+        if (state.zoneMap && state.zoneMap.drawLayer) {
+          state.zoneMap.drawLayer.remove()
+          state.zoneMap.drawLayer = null
+        }
+      }
+
+      async function loadActivity() {
+        const t = document.getElementById('actFilterType').value
+        const from = document.getElementById('actFrom').value
+        const to = document.getElementById('actTo').value
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        const url = `/api/activity_logs?${t?('type='+encodeURIComponent(t)+'&'):''}${from?('from='+encodeURIComponent(from)+'&'):''}${to?('to='+encodeURIComponent(to)):''}`
+        const r = await fetch(url, { headers }); const logs = await r.json()
+        const tbl = document.getElementById('activityLogs'); tbl.innerHTML = '<tr><th>Category</th><th>Activity</th><th>User</th><th>Location</th><th>Time</th><th>Photo</th><th>Action</th></tr>'
+        logs.forEach(a => {
+          const cat = a.category || TYPE_TO_CAT[a.type] || ''
+          const label = TYPE_LABEL[a.type] || a.type
+          const u = (state.users||[]).find(x => x.id === a.user_id)
+          const uname = u ? u.name : a.user_id
+          const thumb = a.photoUrl ? `<a target="_blank" href="${a.photoUrl}"><img src="${a.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
+          tbl.innerHTML += `<tr><td>${cat}</td><td>${label}</td><td>${uname}</td><td><a target="_blank" href="https://maps.google.com/?q=${a.location.lat},${a.location.lng}">${a.location.lat.toFixed(5)}, ${a.location.lng.toFixed(5)}</a></td><td>${new Date(a.created_at).toLocaleString()}</td><td>${thumb}</td><td><button onclick="deleteActivity('${a.id}')">Delete</button></td></tr>`
+        })
+      }
+
+      async function deleteActivity(id) {
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        await fetch('/api/activity_logs/'+id, { method:'DELETE', headers })
+        loadActivity()
+      }
+
+      async function loadInsights() {
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        const r = await fetch('/api/admin/activity_insights', { headers }); const d = await r.json()
+        alert(`Illegal in protected: ${d.illegal_in_protected}\nApproaches: ${d.approaches_last7}\nPatrol km: ${d.patrol_km}`)
+      }
+      const ACTIVITY_OPTIONS = {
+        fishing: [
+          { value: 'catching_fish', label: 'Catching fish using nets, traps, or hand lines' },
+          { value: 'unloading_catch', label: 'Unloading fish catch at the shore' },
+          { value: 'boat_launching_docking', label: 'Boat launching and docking' }
+        ],
+        environmental: [
+          { value: 'mangrove_planting', label: 'Mangrove planting' },
+          { value: 'coastal_cleanup', label: 'Coastal clean-up' },
+          { value: 'monitoring_water_quality', label: 'Monitoring water quality' },
+          { value: 'checking_coral_reef', label: 'Checking coral reef conditions' }
+        ],
+        tourism: [
+          { value: 'swimming_snorkeling', label: 'Swimming and snorkeling' },
+          { value: 'scuba_diving', label: 'Scuba diving' },
+          { value: 'boating_kayaking', label: 'Boating or kayaking' },
+          { value: 'beach_events', label: 'Beach events' }
+        ],
+        maritime: [
+          { value: 'cargo_unloading', label: 'Cargo unloading near small ports' },
+          { value: 'movement_of_fishing_vessels', label: 'Movement of fishing vessels' },
+          { value: 'transporting_goods_small_boats', label: 'Transporting goods using small boats' }
+        ],
+        illegal: [
+          { value: 'illegal_fishing', label: 'Illegal fishing (dynamite, cyanide)' },
+          { value: 'unauthorized_structures', label: 'Unauthorized structures along the coastline' },
+          { value: 'illegal_dumping', label: 'Illegal dumping of waste' }
+        ]
+      }
+      const TYPE_TO_CAT = Object.fromEntries(Object.entries(ACTIVITY_OPTIONS).flatMap(([k,v]) => v.map(o => [o.value, k])))
+      const TYPE_LABEL = Object.fromEntries(Object.values(ACTIVITY_OPTIONS).flatMap(v => v.map(o => [o.value, o.label])))
+      const CAT_COLORS = { fishing:'#1A73E8', environmental:'#34A853', tourism:'#FBBC04', maritime:'#A142F4', illegal:'#EA4335' }
+      function populateActivityFilter() {
+        const cat = document.getElementById('actFilterCat').value
+        const sel = document.getElementById('actFilterType')
+        sel.innerHTML = ''
+        const def = document.createElement('option'); def.value=''; def.textContent='All activities'; sel.appendChild(def)
+        const list = cat ? ACTIVITY_OPTIONS[cat] : Object.values(ACTIVITY_OPTIONS).flat()
+        list.forEach(o => { const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.label; sel.appendChild(opt) })
+      }
+      document.getElementById('actFilterCat').addEventListener('change', populateActivityFilter)
+      populateActivityFilter()
+
+      async function delZone(id) {
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        await fetch('/api/admin/protected_areas/'+id, { method:'DELETE', headers })
+        loadData()
+      }
+      async function downloadExcel() {
+        if (!window.XLSX) { alert('Excel library not loaded'); return }
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        const r = await fetch('/api/catches', { headers })
+        const d = await r.json()
+        const rows = d.map(c => ({
+          Species: c.species || '',
+          NetType: c.netType || '',
+          WeightKg: c.weightKg || null,
+          LengthCm: c.lengthCm || null,
+          Gear: c.gear || '',
+          Vessel: c.vessel || '',
+          Latitude: c.lat,
+          Longitude: c.lng,
+          CapturedAt: c.capturedAt,
+          UserName: c.user ? c.user.name : '',
+          UserEmail: c.user ? c.user.email : ''
+        }))
+        const wb = window.XLSX.utils.book_new()
+        const ws = window.XLSX.utils.json_to_sheet(rows)
+        window.XLSX.utils.book_append_sheet(wb, ws, 'Catches')
+        window.XLSX.writeFile(wb, 'catches.xlsx')
+      }
+
+      function normalizeTrackPoint(p) {
+        const userId = p && p.userId != null ? String(p.userId) : null
+        const lat = p && p.lat != null ? Number(p.lat) : NaN
+        const lng = p && p.lng != null ? Number(p.lng) : NaN
+        if (!userId || !Number.isFinite(lat) || !Number.isFinite(lng)) return null
+        const recordedAt = p.recordedAt ? String(p.recordedAt) : new Date().toISOString()
+        const accuracy = p.accuracy != null && p.accuracy !== '' ? Number(p.accuracy) : null
+        const speed = p.speed != null && p.speed !== '' ? Number(p.speed) : null
+        const heading = p.heading != null && p.heading !== '' ? Number(p.heading) : null
+        const active = p && p.active === false ? false : true
+        const lastSeenAt = p && p.lastSeenAt ? String(p.lastSeenAt) : null
+        const status = p && p.status != null ? String(p.status) : null
+        const statusAt = p && p.statusAt != null ? String(p.statusAt) : null
+        return { userId, lat, lng, recordedAt, accuracy: Number.isFinite(accuracy) ? accuracy : null, speed: Number.isFinite(speed) ? speed : null, heading: Number.isFinite(heading) ? heading : null, active, lastSeenAt, status, statusAt, user: p.user || null }
+      }
+      function normalizeStatusEvent(p) {
+        const userId = p && p.userId != null ? String(p.userId) : null
+        const status = p && p.status != null ? String(p.status) : null
+        const at = p && (p.at || p.recordedAt) ? String(p.at || p.recordedAt) : new Date().toISOString()
+        const lat = p && p.lat != null ? Number(p.lat) : NaN
+        const lng = p && p.lng != null ? Number(p.lng) : NaN
+        if (!userId || !status) return null
+        return { userId, status, at, lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null }
+      }
+      function applyStatusEvent(p) {
+        const ev = normalizeStatusEvent(p)
+        if (!ev) return
+        if (!state.latestLocations) state.latestLocations = new Map()
+        const cur = state.latestLocations.get(ev.userId) || null
+        const lat = ev.lat != null ? ev.lat : (cur ? cur.lat : null)
+        const lng = ev.lng != null ? ev.lng : (cur ? cur.lng : null)
+        if (lat == null || lng == null) {
+          state.latestLocations.set(ev.userId, { ...(cur || {}), userId: ev.userId, status: ev.status, statusAt: ev.at })
+          return
+        }
+        const active = ev.status === 'port' ? false : true
+        const np = normalizeTrackPoint({
+          ...(cur || {}),
+          userId: ev.userId,
+          lat,
+          lng,
+          active,
+          status: ev.status,
+          statusAt: ev.at,
+          recordedAt: (cur && cur.recordedAt) ? cur.recordedAt : ev.at,
+          lastSeenAt: ev.at
+        })
+        if (!np) return
+        np.user = (cur && cur.user) ? cur.user : (p && p.user ? p.user : null)
+        state.latestLocations.set(np.userId, np)
+        upsertUserMarker(np)
+      }
+      function getUserLabel(userId, payloadUser) {
+        if (payloadUser && payloadUser.name) return payloadUser.name
+        const u = (state.users || []).find(x => x.id === userId)
+        if (u && u.name) return u.name
+        return userId
+      }
+      function setUserMapStatus(text) {
+        const el = document.getElementById('user_map_status')
+        if (el) el.textContent = text || ''
+      }
+      function initUserMap() {
+        if (!state.token) return
+        const el = document.getElementById('user_map')
+        if (!el) return
+        if (!window.L) { setUserMapStatus('Map library failed to load'); return }
+
+        if (!state.userMap) {
+          const map = window.L.map(el, { zoomControl: true })
+          window.L.tileLayer('/api/public/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map)
+          map.setView([12.5, 122.0], 5)
+          state.userMap = { map, markersByUserId: new Map(), circlesByUserId: new Map(), routesByUserId: new Map(), routePtsByUserId: new Map(), routeLastKeyByUserId: new Map(), lastFitAt: 0 }
+        }
+
+        try { state.userMap.map.invalidateSize() } catch {}
+        refreshUserMap()
+      }
+      async function refreshUserMap(forceFit) {
+        if (!state.token) return
+        if (!state.latestLocations) state.latestLocations = new Map()
+        setUserMapStatus('Loading locations...')
+        try {
+          const headers = { 'Authorization': 'Bearer ' + state.token }
+          const r = await fetch('/api/admin/live_locations', { headers })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error || 'Failed to load locations')
+          const seenUserIds = new Set()
+          const activeUserIds = new Set()
+          ;(d || []).forEach(p => {
+            const np = normalizeTrackPoint(p)
+            if (!np) return
+            np.user = p.user || null
+            seenUserIds.add(np.userId)
+            if (np.active !== false) activeUserIds.add(np.userId)
+            state.latestLocations.set(np.userId, np)
+            upsertUserMarker(np)
+          })
+          Array.from(state.latestLocations.keys()).forEach(uid => {
+            if (!seenUserIds.has(uid)) {
+              removeUserMarker(uid)
+            }
+          })
+          const vals = state.latestLocations ? Array.from(state.latestLocations.values()) : []
+          let inTransit = 0, inPort = 0, unknown = 0
+          vals.forEach(x => {
+            if (!x) return
+            if (x.status === 'transit') inTransit++
+            else if (x.status === 'port') inPort++
+            else unknown++
+          })
+          setUserMapStatus(`${inTransit} in transit · ${inPort} in port${unknown ? (' · ' + unknown + ' unknown') : ''}`)
+          if (forceFit) fitUserMap()
+          else maybeAutoFitUserMap()
+        } catch (e) {
+          setUserMapStatus(e.message || 'Failed to load locations')
+        }
+      }
+      function removeUserMarker(userId) {
+        if (!userId) return
+        if (state.latestLocations) state.latestLocations.delete(userId)
+        if (!state.userMap) return
+        const { markersByUserId, circlesByUserId, routesByUserId, routePtsByUserId, routeLastKeyByUserId } = state.userMap
+        const marker = markersByUserId.get(userId)
+        if (marker) { try { marker.remove() } catch {} markersByUserId.delete(userId) }
+        const circle = circlesByUserId.get(userId)
+        if (circle) { try { circle.remove() } catch {} circlesByUserId.delete(userId) }
+        const route = routesByUserId.get(userId)
+        if (route) { try { route.remove() } catch {} routesByUserId.delete(userId) }
+        routePtsByUserId.delete(userId)
+        routeLastKeyByUserId.delete(userId)
+      }
+      function markUserInactive(userId) {
+        if (!userId) return
+        if (!state.latestLocations) state.latestLocations = new Map()
+        const cur = state.latestLocations.get(userId)
+        if (cur) {
+          upsertUserMarker({ ...cur, active: false })
+          return
+        }
+        if (!state.userMap) return
+        const { markersByUserId, circlesByUserId } = state.userMap
+        const marker = markersByUserId.get(userId)
+        if (marker && marker.setStyle) {
+          try { marker.setStyle({ color: '#86868b', fillColor: '#86868b', opacity: 0.9, fillOpacity: 0.6 }) } catch {}
+        }
+        const circle = circlesByUserId.get(userId)
+        if (circle) { try { circle.remove() } catch {} circlesByUserId.delete(userId) }
+      }
+      function upsertUserMarker(p) {
+        if (!p) return
+        const isActive = p.active !== false
+        if (!state.latestLocations) state.latestLocations = new Map()
+        state.latestLocations.set(p.userId, p)
+
+        if (!state.userMap) return
+        const { map, markersByUserId, circlesByUserId, routesByUserId, routePtsByUserId, routeLastKeyByUserId } = state.userMap
+        const label = getUserLabel(p.userId, p.user)
+        const when = p.recordedAt ? new Date(p.recordedAt) : null
+        const subtitle = when ? when.toLocaleString() : ''
+
+        const statusText = p.status === 'port' ? 'In Port' : (p.status === 'transit' ? 'In Transit' : 'Unknown')
+        const statusAt = p.statusAt ? new Date(p.statusAt) : null
+        const statusLine = statusAt ? `${statusText} • ${statusAt.toLocaleString()}` : statusText
+        const markerColor = p.status === 'port' ? '#ff9500' : (p.status === 'transit' ? '#007aff' : (isActive ? '#007aff' : '#86868b'))
+        const markerOpacity = 1
+        const fillOpacity = p.status === 'port' ? 0.85 : (p.status === 'transit' ? 0.9 : (isActive ? 0.9 : 0.6))
+
+        let marker = markersByUserId.get(p.userId)
+        if (!marker) {
+          marker = window.L.circleMarker([p.lat, p.lng], { radius: isActive ? 7 : 6, color: markerColor, weight: 2, opacity: markerOpacity, fillColor: markerColor, fillOpacity })
+          marker.addTo(map)
+          markersByUserId.set(p.userId, marker)
+        } else {
+          marker.setLatLng([p.lat, p.lng])
+          if (marker.setStyle) {
+            try { marker.setStyle({ color: markerColor, fillColor: markerColor, opacity: markerOpacity, fillOpacity }) } catch {}
+          }
+        }
+        marker.bindPopup(`<b>${label}</b><div class="small">${subtitle}</div><div class="small">${statusLine}</div><div class="small">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div><div style="margin-top:8px"><button onclick="openUserHistory('${p.userId}')" style="width:auto;height:auto;padding:6px 10px">History</button></div>`)
+
+        if ((p.status === 'transit' || isActive) && p.accuracy != null && Number.isFinite(p.accuracy) && p.accuracy > 0) {
+          let circle = circlesByUserId.get(p.userId)
+          if (!circle) {
+            circle = window.L.circle([p.lat, p.lng], { radius: p.accuracy, weight: 1, opacity: 0.5, fillOpacity: 0.08 })
+            circle.addTo(map)
+            circlesByUserId.set(p.userId, circle)
+          } else {
+            circle.setLatLng([p.lat, p.lng])
+            circle.setRadius(p.accuracy)
+          }
+        } else {
+          const circle = circlesByUserId.get(p.userId)
+          if (circle) { try { circle.remove() } catch {} circlesByUserId.delete(p.userId) }
+        }
+
+        if (p.status === 'transit') {
+          let route = routesByUserId.get(p.userId)
+          if (!route) {
+            route = window.L.polyline([], { color: '#34c759', weight: 3, opacity: 0.85 })
+            route.addTo(map)
+            routesByUserId.set(p.userId, route)
+            routePtsByUserId.set(p.userId, [])
+          }
+          const key = p.recordedAt || p.lastSeenAt || ''
+          const lastKey = routeLastKeyByUserId.get(p.userId)
+          if (key && key !== lastKey) {
+            const pts = routePtsByUserId.get(p.userId) || []
+            pts.push([p.lat, p.lng])
+            if (pts.length > 300) pts.shift()
+            routePtsByUserId.set(p.userId, pts)
+            try { route.setLatLngs(pts) } catch {}
+            routeLastKeyByUserId.set(p.userId, key)
+          }
+        } else {
+          const route = routesByUserId.get(p.userId)
+          if (route) { try { route.remove() } catch {} routesByUserId.delete(p.userId) }
+          routePtsByUserId.delete(p.userId)
+          routeLastKeyByUserId.delete(p.userId)
+        }
+      }
+      function fitUserMap() {
+        if (!state.userMap) return
+        if (!state.latestLocations || state.latestLocations.size === 0) return
+        const pts = Array.from(state.latestLocations.values()).map(p => [p.lat, p.lng])
+        try {
+          const bounds = window.L.latLngBounds(pts)
+          state.userMap.map.fitBounds(bounds.pad(0.2), { animate: false })
+          state.userMap.lastFitAt = Date.now()
+        } catch {}
+      }
+      function maybeAutoFitUserMap() {
+        if (!state.userMap) return
+        if (!state.latestLocations || state.latestLocations.size === 0) return
+        const now = Date.now()
+        if (!state.userMap.lastFitAt || now - state.userMap.lastFitAt > 60000) fitUserMap()
+      }
+
+      function initZoneMap() {
+        if (!state.token) return
+        const el = document.getElementById('zone_map')
+        if (!el) return
+        if (!window.L) return
+
+        if (!state.zoneMap) {
+          const map = window.L.map(el, { zoomControl: true })
+          window.L.tileLayer('/api/public/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map)
+          map.setView([18.256, 122.202], 12)
+          state.zoneMap = { map, drawLayer: null, drawPoints: [], zonesLayer: window.L.layerGroup().addTo(map), isDrawing: false }
+          
+          map.on('click', (e) => {
+            if (!state.zoneMap.isDrawing) return
+            const pt = [e.latlng.lat, e.latlng.lng]
+            state.zoneMap.drawPoints.push(pt)
+            updateDrawnPolygon()
+          })
+
+          map.on('dblclick', (e) => {
+            if (!state.zoneMap.isDrawing) return
+            finishDrawingZone()
+          })
+        }
+        
+        try { state.zoneMap.map.invalidateSize() } catch {}
+        renderZonesOnMap()
+      }
+
+      function startDrawingZone() {
+        if (!state.zoneMap) return
+        state.zoneMap.isDrawing = true
+        state.zoneMap.drawPoints = []
+        if (state.zoneMap.drawLayer) { state.zoneMap.drawLayer.remove(); state.zoneMap.drawLayer = null }
+        document.getElementById('btn_draw_start').textContent = 'Drawing... (Double-click to finish)'
+        document.getElementById('btn_draw_start').disabled = true
+        state.zoneMap.map.getContainer().style.cursor = 'crosshair'
+        state.zoneMap.map.doubleClickZoom.disable()
+      }
+
+      function updateDrawnPolygon() {
+        const pts = state.zoneMap.drawPoints
+        if (pts.length < 2) return
+        if (state.zoneMap.drawLayer) { state.zoneMap.drawLayer.remove() }
+        state.zoneMap.drawLayer = window.L.polygon(pts, { color: '#007aff', weight: 3, dashArray: '5, 5' }).addTo(state.zoneMap.map)
+      }
+
+      function finishDrawingZone() {
+        const pts = state.zoneMap.drawPoints
+        if (pts.length < 3) {
+          alert('Need at least 3 points for a polygon')
+          clearDrawnZone()
+          return
+        }
+        
+        // Close polygon
+        const first = pts[0]
+        pts.push([first[0], first[1]])
+        
+        const geojson = {
+          type: 'Polygon',
+          coordinates: [pts.map(p => [p[1], p[0]])] // Leaflet is [lat,lng], GeoJSON is [lng,lat]
+        }
+        
+        document.getElementById('zoneJson').value = JSON.stringify(geojson, null, 2)
+        const coll = document.querySelector('.collapsible')
+        if (coll) coll.classList.add('open')
+        
+        state.zoneMap.isDrawing = false
+        state.zoneMap.map.getContainer().style.cursor = ''
+        state.zoneMap.map.doubleClickZoom.enable()
+        document.getElementById('btn_draw_start').textContent = 'Start Drawing'
+        document.getElementById('btn_draw_start').disabled = false
+        
+        if (state.zoneMap.drawLayer) {
+          state.zoneMap.drawLayer.setStyle({ dashArray: null, fillOpacity: 0.2 })
+        }
+      }
+
+      function clearDrawnZone() {
+        if (!state.zoneMap) return
+        state.zoneMap.isDrawing = false
+        state.zoneMap.drawPoints = []
+        if (state.zoneMap.drawLayer) { state.zoneMap.drawLayer.remove(); state.zoneMap.drawLayer = null }
+        document.getElementById('zoneJson').value = ''
+        document.getElementById('btn_draw_start').textContent = 'Start Drawing'
+        document.getElementById('btn_draw_start').disabled = false
+        state.zoneMap.map.getContainer().style.cursor = ''
+        state.zoneMap.map.doubleClickZoom.enable()
+      }
+
+      function renderZonesOnMap() {
+        if (!state.zoneMap || !state.zones) return
+        state.zoneMap.zonesLayer.clearLayers()
+        
+        state.zones.forEach(z => {
+          if (!z.geom) return
+          const poly = window.L.geoJSON(z.geom, {
+            style: { color: '#ff3b30', weight: 2, fillOpacity: 0.15 }
+          })
+          poly.bindPopup(`<b>${z.name || 'Unnamed Zone'}</b><br/><button onclick="delZone('${z.id}')" style="margin-top:8px">Delete</button>`)
+          poly.addTo(state.zoneMap.zonesLayer)
+        })
+      }
+
+      function updateZoneListUi() {
+        const container = document.getElementById('zoneListContainer')
+        if (!container) return
+        container.innerHTML = ''
+        
+        if (!state.zones || state.zones.length === 0) {
+          container.innerHTML = '<div class="small" style="grid-column: 1/-1; text-align: center; padding: 24px; background: var(--background); border-radius: 12px">No protected zones defined yet.</div>'
+          return
+        }
+        
+        state.zones.forEach(z => {
+          const card = document.createElement('div')
+          card.className = 'card'
+          card.style.margin = '0'; card.style.padding = '16px'
+          
+          card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:8px">
+              <h4 style="margin:0; font-size:15px">${z.name || 'Unnamed Zone'}</h4>
+              <button onclick="delZone('${z.id}')" style="background:transparent; color:var(--error); border:1px solid var(--error); padding:4px 8px; font-size:11px; height:auto; width:auto; border-radius:12px">Delete</button>
+            </div>
+            <div class="small" style="color:var(--text-muted); font-size:11px; margin-bottom:8px">ID: ${z.id}</div>
+            <div style="display:flex; gap:8px">
+              <button onclick="zoomToZone('${z.id}')" style="flex:1; height:auto; padding:6px; font-size:12px; background:var(--background); color:var(--primary); border:1px solid var(--primary); box-shadow:none"><i class="fa-solid fa-search-plus"></i> View</button>
+              <button onclick="editZone('${z.id}')" style="flex:1; height:auto; padding:6px; font-size:12px; background:var(--background); color:var(--primary); border:1px solid var(--primary); box-shadow:none"><i class="fa-solid fa-edit"></i> Edit</button>
+            </div>
+          `
+          container.appendChild(card)
+        })
+      }
+
+      function zoomToZone(id) {
+        if (!state.zoneMap || !state.zones) return
+        const z = state.zones.find(x => x.id === id)
+        if (!z || !z.geom) return
+        
+        const layer = window.L.geoJSON(z.geom)
+        state.zoneMap.map.fitBounds(layer.getBounds().pad(0.2))
+        showAdminModule('mod_zones')
+      }
+
+      function ensureLive(force) {
+        if (window._liveES && !force) {
+           if (window._liveES.readyState !== 2) return 
+           window._liveES.close()
+        }
+        if (window._liveES) { window._liveES.close(); window._liveES = null }
+        
+        console.log('Connecting to live stream...')
+        window._liveES = new EventSource('/api/admin/live?token='+encodeURIComponent(state.token))
+        
+        window._liveES.onopen = () => console.log('Live stream connected')
+        
+        window._liveES.onerror = function(e) {
+          console.log('Live stream error, closing', e)
+          if (window._liveES) { window._liveES.close(); window._liveES = null }
+          // Retry after 5s
+          setTimeout(() => ensureLive(), 5000)
+        }
+        
+        window._liveES.onmessage = (ev) => {
+          try {
+            const p = JSON.parse(ev.data)
+            if (p && p.type === 'catch') addCatchRow(p.item)
+            else if (p && p.type === 'alert') {
+              addAlertRow(p.item)
+              if (p.item && p.item.type === 'SOS' && String(p.item.status||'').toLowerCase() === 'pending') {
+                showSosPopup(p.item)
+              } else {
+                playNotificationSound()
+              }
+            }
+            else if (p && p.type === 'status' && p.userId != null) {
+              applyStatusEvent(p)
+              if (state.currentModule === 'mod_map') {
+                const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
+                setUserMapStatus(`${n} active user(s)`)
+              }
+            }
+            else if (p && p.type === 'track_stop' && p.userId != null) {
+              const uid = String(p.userId)
+              const np = normalizeTrackPoint({ ...p, active: false, recordedAt: p.at || p.recordedAt })
+              if (np) {
+                np.active = false
+                if (!state.latestLocations) state.latestLocations = new Map()
+                state.latestLocations.set(np.userId, np)
+                upsertUserMarker(np)
+              } else {
+                markUserInactive(uid)
+              }
+              if (state.currentModule === 'mod_map') {
+                const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
+                setUserMapStatus(`${n} active user(s)`)
+              }
+            }
+            else {
+              const np = normalizeTrackPoint(p)
+              if (np) {
+                if (!state.latestLocations) state.latestLocations = new Map()
+                state.latestLocations.set(np.userId, np)
+                upsertUserMarker(np)
+                if (state.currentModule === 'mod_map') {
+                  const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
+                  setUserMapStatus(`${n} active user(s)`)
+                }
+              }
+            }
+          } catch {}
+        }
+      }
+      function addCatchRow(c) {
+        const ct = document.getElementById('catches')
+        if (!ct || !ct.innerHTML) return
+        const thumb = c.photoUrl ? `<a target="_blank" href="${c.photoUrl}"><img src="${c.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
+        const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td>${c.netType || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+        ct.innerHTML += row
+      }
+      function addAlertRow(a) {
+        const at = document.getElementById('alerts')
+        if (!at || !at.innerHTML) return
+        const uname = a.user ? a.user.name : (a.userName || a.userId)
+        const actions = (a.status==='resolved' ? '' : (a.status==='acknowledged' ? `<button onclick="resolveAlert('${a.id}')">Resolve</button>` : `<button onclick="acknowledgeAlert('${a.id}')">Acknowledge</button> <button onclick="resolveAlert('${a.id}')">Resolve</button>`)) + ` <button onclick="confirmDeleteAlert('${a.id}')">Delete</button>`
+        
+        let typeStyle = ''
+        if (a.type === 'Status: Active') typeStyle = 'background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+        else if (a.type === 'Status: In Port') typeStyle = 'background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+        else if (a.type === 'Status: In Transit') typeStyle = 'background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+        else if (a.type === 'SOS') typeStyle = 'background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
+        
+        const typeDisplay = typeStyle ? `<span style="${typeStyle}">${a.type}</span>` : a.type
+        const row = `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</td><td>${new Date(a.recordedAt).toLocaleString()}</td><td>${actions}</td></tr>`
+        at.innerHTML += row
+      }
+      function playNotificationSound() {
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext
+          if (!AC) return
+          const ctx = new AC()
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.type = 'sine'
+          osc.frequency.setValueAtTime(523.25, ctx.currentTime) // C5
+          osc.frequency.exponentialRampToValueAtTime(1046.50, ctx.currentTime + 0.1) // C6
+          gain.gain.setValueAtTime(0, ctx.currentTime)
+          gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05)
+          gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2)
+          osc.connect(gain); gain.connect(ctx.destination); osc.start()
+          osc.stop(ctx.currentTime + 0.2)
+          setTimeout(() => ctx.close(), 300)
+        } catch {}
+      }
+      function startAlarm(){
+        if (state._alarmOn) return
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext
+          if (!AC) return
+          const ctx = new AC()
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.type = 'sine'
+          osc.frequency.value = 880
+          gain.gain.value = 0
+          osc.connect(gain); gain.connect(ctx.destination); osc.start()
+          let active = false
+          const timer = setInterval(() => { active = !active; gain.gain.setTargetAtTime(active ? 0.25 : 0, ctx.currentTime, 0.02) }, 600)
+          state._alarm = { ctx, osc, gain, timer }
+          state._alarmOn = true
+          try { ctx.resume() } catch {}
+        } catch {}
+      }
+      function stopAlarm(){
+        const a = state._alarm
+        if (!a) return
+        try { clearInterval(a.timer); a.osc.stop(); a.ctx.close() } catch {}
+        state._alarm = null
+        state._alarmOn = false
+      }
+      function showSosPopup(a){
+        state.sosCurrent = a
+        const ov = document.getElementById('sos_overlay')
+        const box = document.getElementById('sos_popup')
+        const uname = a.user ? a.user.name : (a.userName || a.userId)
+        const tm = new Date(a.recordedAt).toLocaleString()
+        box.innerHTML = `
+          <h3>🚨 SOS Alert</h3>
+          <div class="meta">A user has triggered an SOS.</div>
+          <p><b>User:</b> ${uname}<br><b>Location:</b> ${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}<br><b>Time:</b> ${tm}</p>
+          <div style="display:flex; gap:8px; justify-content:flex-end">
+            <button onclick="acknowledgeAlert('${a.id}');dismissSos('${a.id}')">Acknowledge</button>
+            <button onclick="resolveAlert('${a.id}');dismissSos('${a.id}')">Resolve</button>
+          </div>
+        `
+        ov.style.display = 'flex'
+        startAlarm()
+      }
+      function dismissSos(id){
+        stopAlarm()
+        state.sosCurrent = null
+        const ov = document.getElementById('sos_overlay')
+        ov.style.display = 'none'
+      }
+
+      async function resolveAlert(id) {
+        const headers = { 'Content-Type':'application/json', 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/alerts/'+id, { method:'PATCH', headers, body: JSON.stringify({ status:'resolved' }) })
+        loadData()
+      }
+      async function acknowledgeAlert(id) {
+        const headers = { 'Content-Type':'application/json', 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/alerts/'+id, { method:'PATCH', headers, body: JSON.stringify({ status:'acknowledged' }) })
+        loadData()
+      }
+      function closeHistory() {
+        const ov = document.getElementById('history_overlay')
+        if (ov) ov.style.display = 'none'
+        const box = document.getElementById('history_popup')
+        if (box) box.innerHTML = ''
+      }
+      async function openUserHistory(userId) {
+        if (!userId) return
+        const ov = document.getElementById('history_overlay')
+        const box = document.getElementById('history_popup')
+        if (!ov || !box) return
+        ov.style.display = 'flex'
+        box.innerHTML = `<h3>History</h3><div class="small">Loading...</div><div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px"><button onclick="closeHistory()">Close</button></div>`
+        try {
+          const headers = { 'Authorization': 'Bearer ' + state.token }
+          const r = await fetch('/api/admin/status_history?userId=' + encodeURIComponent(String(userId)) + '&limit=200', { headers })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error || 'Failed to load history')
+          const latest = state.latestLocations ? state.latestLocations.get(String(userId)) : null
+          const label = getUserLabel(String(userId), latest ? latest.user : null)
+          const curStatusText = latest && latest.status === 'port' ? 'In Port' : (latest && latest.status === 'transit' ? 'In Transit' : 'Unknown')
+          const curWhen = latest && latest.statusAt ? new Date(latest.statusAt).toLocaleString() : ''
+          const curLoc = latest && Number.isFinite(latest.lat) && Number.isFinite(latest.lng) ? `${latest.lat.toFixed(5)}, ${latest.lng.toFixed(5)}` : ''
+          const rows = (Array.isArray(d) ? d : []).map(e => {
+            const stText = e.status === 'port' ? 'In Port' : (e.status === 'transit' ? 'In Transit' : String(e.status || ''))
+            const when = e.at ? new Date(e.at).toLocaleString() : ''
+            const hasLoc = e.lat != null && e.lng != null
+            const loc = hasLoc ? `${Number(e.lat).toFixed(5)}, ${Number(e.lng).toFixed(5)}` : ''
+            const link = hasLoc ? ` <a target="_blank" href="https://maps.google.com/?q=${Number(e.lat)},${Number(e.lng)}" class="small">Map</a>` : ''
+            return `<div style="padding:10px 0; border-top:1px solid var(--border)"><div style="font-weight:600">${stText}</div><div class="small">${when}${loc ? (' • ' + loc) : ''}${link}</div></div>`
+          }).join('')
+          box.innerHTML = `
+            <h3>${label}</h3>
+            <div class="small">${curStatusText}${curWhen ? (' • ' + curWhen) : ''}${curLoc ? (' • ' + curLoc) : ''}</div>
+            <div style="margin-top:14px; max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius:12px; padding:0 12px">
+              ${rows || `<div style="padding:10px 0" class="small">No status events yet.</div>`}
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+              <button onclick="closeHistory()">Close</button>
+            </div>
+          `
+        } catch (e) {
+          box.innerHTML = `<h3>History</h3><div class="small" style="color:var(--error)">${e.message || 'Failed to load history'}</div><div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px"><button onclick="closeHistory()">Close</button></div>`
+        }
+      }
+      function openConfirm(text, onYes){
+        const ov = document.getElementById('confirm_overlay'); const box = document.getElementById('confirm_popup')
+        state.confirmCb = onYes
+        box.innerHTML = `<h3>Confirm</h3><p>${text}</p><div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="doConfirm()">Confirm</button><button onclick="closeConfirm()">Cancel</button></div>`
+        ov.style.display = 'flex'
+      }
+      function closeConfirm(){
+        const ov = document.getElementById('confirm_overlay')
+        state.confirmCb = null
+        ov.style.display = 'none'
+      }
+      function doConfirm(){
+        try { if (typeof state.confirmCb === 'function') state.confirmCb() } finally { closeConfirm() }
+      }
+      function confirmDeleteTrack(id){ openConfirm('Delete this track?', function(){ deleteTrack(id) }) }
+      function confirmDeleteAlert(id){ openConfirm('Delete this alert?', function(){ deleteAlert(id) }) }
+      async function deleteTrack(id){
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/tracks/'+id, { method:'DELETE', headers })
+        loadData()
+      }
+      async function deleteAlert(id){
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/alerts/'+id, { method:'DELETE', headers })
+        loadData()
+      }
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost') && window.isSecureContext) {
+        window.addEventListener('load', function(){ navigator.serviceWorker.register('/service-worker.js').catch(function(){}) })
+      }
+      let deferredPrompt = null
+      window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt = e; var b = document.getElementById('install_btn_admin'); if (b) b.style.display = 'inline-flex' })
+      window.addEventListener('appinstalled', function(){ var b = document.getElementById('install_btn_admin'); if (b) b.style.display = 'none' })
+      async function installAdminApp(){ try { if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; var b = document.getElementById('install_btn_admin'); if (b) b.style.display = 'none' } catch {} }
+      function togglePassword(inputId, btnId){
+        const i = document.getElementById(inputId)
+        const b = document.getElementById(btnId)
+        if (!i || !b) return
+        const isPass = i.type === 'password'
+        i.type = isPass ? 'text' : 'password'
+        b.textContent = isPass ? '🔓' : '🔒'
+      }
+    </script>
+  </body>
+  </html>

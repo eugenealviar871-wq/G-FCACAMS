@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/*.json
+uploads/
+.DS_Store
+.vercel/
+package-lock.json

@@ -1,0 +1,1823 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a84ff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; img-src 'self' data: blob: *;" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="apple-touch-icon" href="/logo.svg" />
+    <title>Fish Catch and Coastal Activity Logger</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+      :root {
+        --primary: #007aff;
+        --primary-hover: #0056b3;
+        --surface: #ffffff;
+        --background: #f5f5f7;
+        --text-main: #1d1d1f;
+        --text-muted: #86868b;
+        --border: #d2d2d7;
+        --success: #34c759;
+        --error: #ff3b30;
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+        --shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);
+        --radius: 16px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #1c1c1e;
+          --background: #000000;
+          --text-main: #f5f5f7;
+          --text-muted: #86868b;
+          --border: #424245;
+        }
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        margin: 0;
+        background-color: var(--background);
+        color: var(--text-main);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      body.auth-bg {
+        background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('/assets/auth-bg.jpg');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: var(--surface);
+        padding: 12px 24px;
+        box-shadow: var(--shadow-sm);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      .topbar img { height: 32px; }
+      .topbar .title { font-size: 20px; font-weight: 700; color: var(--text-main); }
+      .logout_btn {
+        margin-left: auto;
+        background: transparent;
+        color: var(--error);
+        border: 1px solid var(--error);
+        border-radius: 20px;
+        padding: 6px 16px;
+        font-size: 13px;
+        box-shadow: none;
+      }
+      .logout_btn:hover { background: rgba(255, 59, 48, 0.1); transform: none; box-shadow: none; }
+      
+      a { color: var(--primary); text-decoration: none; font-weight: 500; }
+      a:hover { text-decoration: underline; }
+      
+      input, button, select, textarea {
+        padding: 10px 14px;
+        margin: 6px 0;
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--text-main);
+        font-size: 14px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+        font-family: inherit;
+      }
+      input:focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+      }
+      
+      button {
+        background: var(--primary);
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        box-shadow: var(--shadow-sm);
+      }
+      button:hover { background: var(--primary-hover); transform: translateY(-1px); box-shadow: var(--shadow); }
+      button:active { transform: translateY(0); }
+      button:disabled { background: var(--text-muted); opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+      
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        padding: 24px;
+        margin: 24px 0;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+      }
+      .card h2 { margin-top: 0; font-size: 22px; font-weight: 700; color: var(--text-main); border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+
+      .row { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 16px; }
+      @media (min-width: 800px) { .row { grid-template-columns: 1fr 1fr; } }
+      
+      .small { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
+      .success { color: var(--success); font-weight: 500; }
+      .error { color: var(--error); font-weight: 500; }
+      .warning { color: #f59e0b; font-weight: 500; }
+      .invalid { border-color: var(--error); }
+      .hint { font-size: 12px; color: var(--text-muted); }
+      
+      #auth { max-width: 480px; margin: 40px auto; text-align: center; }
+      #auth .row { justify-items: stretch; }
+      
+      .layout { display: grid; grid-template-columns: 260px 1fr; gap: 32px; align-items: start; padding: 32px; max-width: 1400px; margin: 0 auto; }
+      @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 16px; gap: 16px; } }
+      
+      #sidebar { position: sticky; top: 90px; }
+      #sidebar .group {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #sidebar button {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        text-align: left;
+        padding: 10px 14px;
+        margin: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-muted);
+        box-shadow: none;
+        font-weight: 500;
+        border: none;
+      }
+      #sidebar button:hover { background: rgba(0,0,0,0.03); color: var(--primary); }
+      #sidebar button.active { background: rgba(0, 122, 255, 0.1); color: var(--primary); font-weight: 600; }
+      #sidebar button .icon { font-size: 16px; width: 24px; text-align: center; }
+      
+      #content_top { display: flex; justify-content: flex-end; margin-bottom: 24px; gap: 12px; }
+      #menu_btn, #refresh_btn, #sos_btn {
+        background: var(--surface);
+        color: var(--text-main);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-weight: 500;
+        box-shadow: var(--shadow-sm);
+        height: 36px;
+        margin: 0;
+        width: auto;
+      }
+      #menu_btn:hover, #refresh_btn:hover { background: var(--background); border-color: var(--text-muted); }
+      #sos_btn { background: #EA4335; color: white; border-color: #c5221f; }
+      #sos_btn:hover { background: #d93025; }
+
+      #drawer_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 999; backdrop-filter: blur(2px); }
+      @media (max-width: 900px) {
+        #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-105%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow); margin: 0; padding: 0; background: var(--surface); border-right: 1px solid var(--border); z-index: 1000; width: 280px; }
+        #sidebar .group { border: none; box-shadow: none; border-radius: 0; height: 100%; padding: 24px 16px; }
+        #sidebar.open { transform: translateX(0); }
+        #drawer_overlay.show { display: block; }
+      }
+      
+      .field { display: grid; grid-template-columns: 140px 1fr; gap: 16px; align-items: center; width: 100%; margin-bottom: 12px; }
+      .field label { justify-self: end; font-weight: 600; font-size: 14px; color: var(--text-muted); }
+      
+      .passwrap { display: flex; align-items: center; width: 100%; position: relative; margin: 6px 0; }
+      .passwrap input { padding-right: 48px; margin: 0 !important; width: 100%; }
+      .passwrap .toggle-eye { position: absolute !important; right: 8px !important; top: 50% !important; transform: translateY(-50%) !important; background: transparent !important; color: var(--text-muted) !important; border: none !important; padding: 4px !important; height: 32px !important; width: 32px !important; box-shadow: none !important; margin: 0 !important; min-width: unset !important; z-index: 10 !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 16px !important; border-radius: 8px !important; cursor: pointer !important; }
+      .passwrap .toggle-eye:hover { color: var(--text-main) !important; background: transparent !important; transform: translateY(-50%) !important; box-shadow: none !important; }
+      
+      .settings-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+      @media (min-width: 800px) { .settings-grid { grid-template-columns: 1fr 1fr; } }
+      
+      .collapsible-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 12px 0; user-select: none; }
+      .collapsible-header:hover { opacity: 0.8; }
+      .collapsible .chev { transition: transform 0.3s ease; font-size: 14px; color: var(--text-muted); }
+      .collapsible.open .chev { transform: rotate(90deg); color: var(--primary); }
+      .collapsible-content { overflow: hidden; max-height: 0; opacity: 0; transition: max-height 0.3s ease, opacity 0.3s ease; }
+      .collapsible.open .collapsible-content { max-height: 1000px; opacity: 1; margin-top: 16px; }
+
+      .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; padding: 20px; background: var(--background); border-radius: 12px; border: 1px solid var(--border); }
+      .grid-form input, .grid-form select, .grid-form button { margin: 0; width: 100%; }
+      .grid-form button { height: 42px; }
+      
+      /* Specific Modules */
+      #catches_list { list-style: none; padding: 0; margin: 0; }
+      .catch-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 16px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      .catch-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--primary); }
+      .catch-header {
+        padding: 12px 16px;
+        background: var(--background);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .catch-species { font-weight: 700; color: var(--text-main); font-size: 15px; }
+      .catch-date { font-size: 12px; color: var(--text-muted); }
+      .catch-body { padding: 12px 16px; display: flex; gap: 16px; align-items: start; }
+      .catch-thumb {
+        width: 72px; height: 72px; background: #eee; border-radius: 8px; flex-shrink: 0;
+        background-size: cover; background-position: center; cursor: pointer; border: 1px solid var(--border);
+      }
+      .catch-details { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-muted); min-width: 0; }
+      .catch-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+      .catch-meta span { display: flex; align-items: center; gap: 4px; background: var(--background); padding: 4px 8px; border-radius: 6px; font-size: 12px; border: 1px solid var(--border); color: var(--text-main); }
+      
+      @keyframes popIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .map-fixed-container {
+        overflow: hidden;
+        background: var(--background);
+        padding: 4px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+      }
+    </style>
+  </head>
+  <body class="auth-bg">
+    <div class="topbar"><img src="/logo.svg" alt="FishMonitor"/><span class="title">Fish Catch and Coastal Activity Logger</span><button id="logout_btn" class="logout_btn" style="display:none" onclick="logout()">Logout</button></div>
+    <div class="card" id="auth">
+      <h2 style="margin-bottom:24px; color:var(--primary)"><i class="fa-solid fa-right-to-bracket"></i> Welcome</h2>
+      <div class="row">
+        <div style="text-align:left">
+          <h3 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:8px">Register</h3>
+          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
+             <label class="small" style="font-weight:600">Full Name</label>
+             <input id="reg_name" placeholder="Name" />
+          </div>
+          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
+             <label class="small" style="font-weight:600">Email Address</label>
+             <input id="reg_email" placeholder="Email" />
+          </div>
+          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
+             <label class="small" style="font-weight:600">Barangay</label>
+             <select id="reg_brgy">
+              <option value="">Select Barangay</option>
+              <option>Amunitan</option>
+              <option>Batangan</option>
+              <option>Baua</option>
+              <option>Cabanbanan Norte</option>
+              <option>Cabanbanan Sur</option>
+              <option>Cabiraoan</option>
+              <option>Callao</option>
+              <option>Calayan</option>
+              <option>Caroan</option>
+              <option>Casitan</option>
+              <option>Flourishing (Poblacion)</option>
+              <option>Ipil</option>
+              <option>Magrafil</option>
+              <option>Minanga</option>
+              <option>Rebecca (Nagbabacalan)</option>
+              <option>Paradise (Poblacion)</option>
+              <option>Pateng</option>
+              <option>Progressive (Poblacion)</option>
+              <option>San Jose</option>
+              <option>Santa Clara</option>
+              <option>Santa Cruz</option>
+              <option>Santa Maria</option>
+              <option>Smart (Poblacion)</option>
+              <option>Tapel</option>
+            </select>
+          </div>
+          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
+             <label class="small" style="font-weight:600">Password</label>
+             <div class="passwrap">
+               <input id="reg_pass" type="password" placeholder="Password" />
+               <button id="reg_pass_toggle" class="toggle-eye" onclick="togglePassword('reg_pass','reg_pass_toggle')">🔒</button>
+             </div>
+          </div>
+          <button onclick="register()" style="margin-top:16px">Register</button>
+        </div>
+        <div style="text-align:left; border-left:1px solid var(--border); padding-left:24px">
+          <h3 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:8px">Login</h3>
+          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
+             <label class="small" style="font-weight:600">Email Address</label>
+             <input id="log_email" placeholder="Email" />
+          </div>
+          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
+             <label class="small" style="font-weight:600">Password</label>
+             <div class="passwrap">
+               <input id="log_pass" type="password" placeholder="Password" />
+               <button id="log_pass_toggle" class="toggle-eye" onclick="togglePassword('log_pass','log_pass_toggle')">🔒</button>
+             </div>
+          </div>
+          <button onclick="login()" style="margin-top:16px">Login</button>
+        </div>
+      </div>
+      <div id="auth_msg" class="small" style="margin-top:16px; min-height:20px"></div>
+    </div>
+    <div class="layout" id="app" style="display:none">
+      <div id="drawer_overlay" onclick="toggleDrawer(false)"></div>
+      <div id="sidebar" role="navigation" aria-label="Main menu">
+        <div class="group">
+          <button data-module="tracking" onclick="showModule('tracking')"><i class="fa-solid fa-map-location-dot icon"></i> GPS Tracking</button>
+          <button data-module="catch" onclick="showModule('catch')"><i class="fa-solid fa-fish icon"></i> Log Catch</button>
+          <button data-module="my_catches" onclick="showModule('my_catches')"><i class="fa-solid fa-clipboard-list icon"></i> My Catches</button>
+          <button data-module="activity" onclick="showModule('activity')"><i class="fa-solid fa-water icon"></i> Coastal Activity</button>
+          <button data-module="camera" onclick="showModule('camera')"><i class="fa-solid fa-camera icon"></i> Camera</button>
+        </div>
+      </div>
+      <div id="content">
+        <div id="content_top">
+          <button id="menu_btn" onclick="toggleDrawer(true)"><img src="/logo.svg" alt="" style="height:18px"/> Home</button>
+          <button id="refresh_btn" onclick="refreshDataUser()"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+          <button id="sos_btn" onclick="sendSOS()"><i class="fa-solid fa-life-ring"></i> SOS</button>
+          <button id="install_btn" style="display:none" onclick="installApp()"><i class="fa-solid fa-download"></i> Install App</button>
+        </div>
+        <div class="card" id="tracking" style="display:none">
+          <h2><i class="fa-solid fa-map-location-dot" style="color:var(--primary)"></i> GPS Tracking</h2>
+
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; padding:12px 16px; background:#eff6ff; border-radius:12px; color:var(--primary); border:1px solid #dbeafe">
+            <i class="fa-solid fa-location-crosshairs" style="font-size:20px"></i>
+            <div>
+                <div class="small" style="color:var(--primary); opacity:0.8">Current Coordinates</div>
+                <div id="cur_coords" style="font-weight:700; font-size:16px">-</div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px">
+            <button id="btn_start_tracking" onclick="startTracking()" style="background:var(--success); height:auto; padding:16px; font-size:16px; display:flex; flex-direction:column; align-items:center; gap:8px"><i class="fa-solid fa-play" style="font-size:24px"></i> Start Tracking</button>
+            <button id="btn_stop_tracking" onclick="stopTracking()" style="background:var(--error); height:auto; padding:16px; font-size:16px; display:flex; flex-direction:column; align-items:center; gap:8px" disabled><i class="fa-solid fa-stop" style="font-size:24px"></i> Stop Tracking</button>
+          </div>
+
+          <div class="grid-form" style="margin:0 0 16px 0">
+            <div>
+              <label class="small"><i class="fa-solid fa-ship"></i> Status</label>
+              <select id="status_sel" onchange="onStatusChange()" style="width:100%">
+                <option value="transit">In Transit</option>
+                <option value="port">In Port</option>
+              </select>
+            </div>
+            <div>
+              <label class="small"><i class="fa-solid fa-clock"></i> Last Change</label>
+              <div id="status_when" class="small" style="padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); min-height:40px; display:flex; align-items:center">-</div>
+            </div>
+          </div>
+
+          <div class="card collapsible" style="margin:0; padding:0 20px; border:1px solid var(--border); box-shadow:none; margin-bottom:16px">
+            <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')" style="padding:12px 0">
+                <span class="small" style="font-weight:600"><i class="fa-solid fa-sliders"></i> Tracking Settings</span>
+                <span class="chev"><i class="fa-solid fa-chevron-right"></i></span>
+            </div>
+            <div class="collapsible-content">
+                <div class="grid-form" style="border:none; padding:0; background:transparent; margin-bottom:16px">
+                    <div>
+                      <label class="small"><i class="fa-solid fa-ruler"></i> Min distance (m)</label>
+                      <input id="min_dist" type="number" value="15" />
+                    </div>
+                    <div>
+                      <label class="small"><i class="fa-solid fa-clock"></i> Min interval (s)</label>
+                      <input id="min_int" type="number" value="10" />
+                    </div>
+                </div>
+            </div>
+          </div>
+          
+          <div id="track_msg" class="small" style="margin-top:8px; text-align:center; min-height:20px"></div>
+          <div id="track_map_status" class="small" style="text-align:center; min-height:18px"></div>
+          <div id="track_map" style="width:100%; height:320px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-top:12px"></div>
+          
+          <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--border)">
+             <div class="small" style="background:#fffbeb; padding:12px; border-radius:8px; border:1px solid #fcd34d; color:#92400e; margin-bottom:12px; display:flex; gap:12px; align-items:start">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px"></i>
+                <span>This app uses approximate location (network/IP) if GPS is unavailable. Results may vary.</span>
+             </div>
+             <button onclick="useApproxLocation()" style="background:var(--surface); color:var(--primary); border:1px solid var(--primary); width:100%"><i class="fa-solid fa-globe"></i> Force Approximate Location</button>
+          </div>
+        </div>
+
+        <div class="card" id="catch" style="display:none">
+          <h2><i class="fa-solid fa-fish" style="color:var(--primary)"></i> Log Catch</h2>
+          
+          <div style="margin-bottom:20px">
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Catch Details</h3>
+            <div class="grid-form" style="margin-bottom:0">
+                <div>
+                <label class="small"><i class="fa-solid fa-fish-fins"></i> Species</label>
+                <select id="species"></select>
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-weight-hanging"></i> Weight (kg)</label>
+                <input id="weight" placeholder="0.00" type="number" step="0.01" />
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-ruler-horizontal"></i> Length (cm)</label>
+                <input id="length" placeholder="0.0" type="number" step="0.1" />
+                </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px">
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Method & Gear</h3>
+            <div class="grid-form" style="margin-bottom:0">
+                <div style="grid-column:1/-1">
+                <label class="small"><i class="fa-solid fa-network-wired"></i> Net Type</label>
+                <select id="netType">
+                    <option value="">Select Types of nets</option>
+                    <optgroup label="Lambat (Nets)">
+                    <option>Pangangawil (Gill Net)</option>
+                    <option>Sapyaw</option>
+                    <option>Sigay</option>
+                    <option>Liting</option>
+                    <option>Sirut</option>
+                    <option>Pannariway</option>
+                    <option>Lambat Lihit (Fine Mesh Net)</option>
+                    <option>Pukot / Beach Seine</option>
+                    <option>Sinsoro / Push Net</option>
+                    <option>Trawl Net</option>
+                    <option>Bagnet / Lift Net</option>
+                    </optgroup>
+                    <optgroup label="Pancing / Hook and Line">
+                    <option>Handline (Pangawil)</option>
+                    <option>Longline (Palundag/Pandos)</option>
+                    <option>Trolling Line</option>
+                    </optgroup>
+                    <optgroup label="Bitag / Fish Traps">
+                    <option>Bubo (Fish Trap)</option>
+                    <option>Baklad (Fish Corrals)</option>
+                    <option>Fyke Net</option>
+                    <option>Fish Pot</option>
+                    </optgroup>
+                </select>
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-gears"></i> Engine/Gear</label>
+                <input id="gear" placeholder="e.g., 16HP" />
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-ship"></i> Vessel Name</label>
+                <input id="vessel" placeholder="e.g., MB Anna" />
+                </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px">
+             <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Evidence</h3>
+             
+             <div style="background:var(--background); padding:16px; border-radius:12px; border:2px dashed var(--border); text-align:center; transition:all 0.2s; cursor:pointer" onclick="document.getElementById('photoFile').click()">
+                <i class="fa-solid fa-camera" style="font-size:24px; color:var(--primary); margin-bottom:8px"></i>
+                <div class="small" style="font-weight:600; color:var(--text-main)">Take or Upload Photo</div>
+                <div class="small" style="font-size:11px; color:var(--text-muted)">Supports EXIF location extraction</div>
+                <input id="photoFile" type="file" accept="image/*" capture="environment" style="display:none" onchange="if(this.files.length) { this.parentElement.style.borderColor='var(--success)'; this.parentElement.style.background='#f0fdf4'; }" />
+             </div>
+
+             <div class="grid-form" style="margin-top:12px; margin-bottom:0; background:transparent; padding:0; border:none">
+                <div style="grid-column:1/-1">
+                   <label class="small"><i class="fa-solid fa-link"></i> Photo URL (Optional)</label>
+                   <input id="photoUrl" placeholder="https://..." />
+                </div>
+                <div style="grid-column:1/-1">
+                   <label class="small"><i class="fa-solid fa-note-sticky"></i> Notes</label>
+                   <input id="note" placeholder="Additional details..." />
+                </div>
+             </div>
+          </div>
+
+          <div style="margin-bottom:24px">
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Location</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0 4px">
+               <div class="small" style="display:flex; gap:6px; align-items:center; color:var(--primary)">
+                  <i class="fa-solid fa-location-dot"></i>
+                  <span id="catch_coords_text" style="font-weight:600">Waiting for signal...</span>
+               </div>
+               <button onclick="resetCatchLocation()" style="width:auto; height:auto; padding:6px 12px; font-size:12px; background:var(--surface); color:var(--primary); border:1px solid var(--border); border-radius:16px">
+                  <i class="fa-solid fa-crosshairs"></i> Current GPS
+               </button>
+            </div>
+          </div>
+
+          <div class="grid-form" style="grid-template-columns: 1fr 1fr; background:transparent; border:none; padding:0; gap:16px">
+            <button id="btn_submit_catch" onclick="logCatch()" disabled style="height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-paper-plane" style="font-size:18px"></i> Submit Catch</button>
+            <button id="btn_upload_catch" onclick="uploadCatch()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-cloud-arrow-up" style="font-size:18px"></i> Upload + EXIF</button>
+          </div>
+          <div id="catch_msg" class="small" style="margin-top:8px; text-align:center">Waiting for location signal...</div>
+        </div>
+
+        <div class="card" id="my_catches" style="display:none">
+          <h2><i class="fa-solid fa-clipboard-list" style="color:var(--primary)"></i> My Catches</h2>
+
+          <div class="card collapsible" style="margin:0; padding:0 20px; border:1px solid var(--border); box-shadow:none; margin-bottom:16px">
+            <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')" style="padding:12px 0">
+                <span class="small" style="font-weight:600"><i class="fa-solid fa-filter"></i> Filter Catches</span>
+                <span class="chev"><i class="fa-solid fa-chevron-right"></i></span>
+            </div>
+            <div class="collapsible-content">
+                <div class="grid-form" style="border:none; padding:0; background:transparent; margin-bottom:16px">
+                    <div>
+                      <label class="small">Species</label>
+                      <select id="filter_species" onchange="renderMyCatches()">
+                        <option value="">All Species</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="small">Date From</label>
+                      <input id="filter_date_from" type="date" onchange="renderMyCatches()" />
+                    </div>
+                    <div>
+                      <label class="small">Date To</label>
+                      <input id="filter_date_to" type="date" onchange="renderMyCatches()" />
+                    </div>
+                </div>
+            </div>
+          </div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px">
+             <span class="small" style="font-weight:600" id="catches_count">0 catches found</span>
+             <button onclick="loadMyCatches()" style="width:auto; height:auto; padding:6px 12px; font-size:12px; background:transparent; color:var(--primary); border:1px solid var(--primary); box-shadow:none"><i class="fa-solid fa-rotate"></i> Refresh</button>
+          </div>
+
+          <ul id="catches_list"></ul>
+        </div>
+
+        <div class="card" id="activity" style="display:none">
+          <h2><i class="fa-solid fa-water" style="color:var(--primary)"></i> Coastal Activity</h2>
+          
+          <div style="margin-bottom:20px">
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Activity Details</h3>
+            <div class="grid-form" style="margin-bottom:0">
+                <div>
+                <label class="small"><i class="fa-solid fa-list"></i> Category</label>
+                <select id="act_cat">
+                    <option value="fishing">Fishing Activities</option>
+                    <option value="environmental">Environmental Activities</option>
+                    <option value="tourism">Tourism & Recreational Activities</option>
+                    <option value="maritime">Maritime & Transport Activities</option>
+                    <option value="illegal">Illegal or Risky Activities</option>
+                </select>
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-tag"></i> Activity Type</label>
+                <select id="act_type"></select>
+                </div>
+                <div style="grid-column:1/-1">
+                <label class="small"><i class="fa-solid fa-note-sticky"></i> Details / Notes</label>
+                <input id="act_note" placeholder="Describe what you see..." />
+                </div>
+            </div>
+          </div>
+          
+          <div style="margin-bottom:20px">
+             <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Route Tracking</h3>
+             <div class="map-fixed-container">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 12px">
+                   <span class="small" style="font-weight:600">Waypoints Recorded</span>
+                   <span class="small" style="background:#eff6ff; padding:4px 12px; border-radius:20px; color:var(--primary); font-weight:700; border:1px solid #dbeafe" id="route_count">0</span>
+                </div>
+                <button id="btn_add_waypoint" onclick="addWaypoint()" disabled style="width:100%; height:auto; padding:12px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:8px; border:none; border-top:1px solid var(--border); border-top-left-radius:0; border-top-right-radius:0; margin:0"><i class="fa-solid fa-map-pin"></i> Add Waypoint (Current Loc)</button>
+             </div>
+          </div>
+
+          <div style="margin-bottom:20px">
+             <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Evidence</h3>
+             <div style="background:var(--background); padding:16px; border-radius:12px; border:2px dashed var(--border); text-align:center; transition:all 0.2s; cursor:pointer" onclick="document.getElementById('act_photo').click()">
+                <i class="fa-solid fa-camera" style="font-size:24px; color:var(--primary); margin-bottom:8px"></i>
+                <div class="small" style="font-weight:600; color:var(--text-main)">Attach Photo</div>
+                <input id="act_photo" type="file" accept="image/*" capture="environment" style="display:none" onchange="if(this.files.length) { this.parentElement.style.borderColor='var(--success)'; this.parentElement.style.background='#f0fdf4'; }" />
+             </div>
+          </div>
+
+          <div class="grid-form" style="grid-template-columns: 1fr 1fr; background:transparent; border:none; padding:0; gap:16px">
+            <button id="btn_submit_act" onclick="submitActivity()" disabled style="height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-paper-plane" style="font-size:18px"></i> Submit Text Only</button>
+            <button id="btn_submit_act_upload" onclick="submitActivityUpload()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-cloud-arrow-up" style="font-size:18px"></i> Submit with Photo</button>
+          </div>
+          <div id="act_msg" class="small" style="margin-top:8px; text-align:center">Waiting for location signal...</div>
+          
+          <div style="margin-top:32px; padding-top:20px; border-top:1px solid var(--border)">
+             <h3 style="color:var(--text-main); font-size:16px; margin-bottom:16px"><i class="fa-solid fa-clock-rotate-left"></i> Recent Activity</h3>
+
+             <div class="card collapsible" style="margin:0; padding:0 20px; border:1px solid var(--border); box-shadow:none; margin-bottom:16px">
+                <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')" style="padding:12px 0">
+                    <span class="small" style="font-weight:600"><i class="fa-solid fa-filter"></i> Filter Activity</span>
+                    <span class="chev"><i class="fa-solid fa-chevron-right"></i></span>
+                </div>
+                <div class="collapsible-content">
+                    <div class="grid-form" style="border:none; padding:0; background:transparent; margin-bottom:16px">
+                        <div>
+                          <label class="small">Category</label>
+                          <select id="filter_act_cat" onchange="renderMyActivity()">
+                            <option value="">All Categories</option>
+                            <option value="fishing">Fishing</option>
+                            <option value="environmental">Environmental</option>
+                            <option value="tourism">Tourism</option>
+                            <option value="maritime">Maritime</option>
+                            <option value="illegal">Illegal/Risky</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="small">Date From</label>
+                          <input id="filter_act_date_from" type="date" onchange="renderMyActivity()" />
+                        </div>
+                        <div>
+                          <label class="small">Date To</label>
+                          <input id="filter_act_date_to" type="date" onchange="renderMyActivity()" />
+                        </div>
+                    </div>
+                </div>
+             </div>
+             
+             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:0 4px">
+                <span class="small" style="font-weight:600" id="activity_count">0 records found</span>
+                <button onclick="loadMyActivity()" style="width:auto; height:auto; padding:6px 12px; font-size:12px; background:transparent; color:var(--primary); border:1px solid var(--primary); box-shadow:none"><i class="fa-solid fa-rotate"></i> Refresh</button>
+             </div>
+
+             <ul id="activity_list" style="list-style:none; padding:0; margin:0"></ul>
+          </div>
+        </div>
+
+        <div class="card" id="camera" style="display:none">
+          <h2><i class="fa-solid fa-camera" style="color:var(--primary)"></i> Camera</h2>
+          <div id="camera_main">
+            
+            <div style="background:#000; border-radius:16px; overflow:hidden; margin-bottom:20px; position:relative; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow)">
+              <video id="cam_video" playsinline autoplay muted style="width:100%; height:100%; object-fit:cover; position:absolute; inset:0"></video>
+              <canvas id="cam_canvas" style="display:none; width:100%; height:100%; object-fit:cover; position:absolute; inset:0"></canvas>
+              <div style="position:absolute; bottom:16px; left:0; right:0; display:flex; justify-content:center; gap:24px; z-index:10">
+                 <button onclick="startCamera()" style="border-radius:50%; width:56px; height:56px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.2); backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,0.4)"><i class="fa-solid fa-power-off" style="font-size:20px"></i></button>
+                 <button id="btn_cam_capture" onclick="capturePhoto()" style="border-radius:50%; width:72px; height:72px; padding:0; display:flex; align-items:center; justify-content:center; background:white; color:black; box-shadow:0 4px 12px rgba(0,0,0,0.3)"><i class="fa-solid fa-camera" style="font-size:28px"></i></button>
+                 <button id="btn_cam_retake" onclick="retakePhoto()" style="display:none; border-radius:50%; width:72px; height:72px; padding:0; align-items:center; justify-content:center; background:#ff3b30; color:white; box-shadow:0 4px 12px rgba(0,0,0,0.3)"><i class="fa-solid fa-rotate-left" style="font-size:28px"></i></button>
+              </div>
+            </div>
+
+            <div class="grid-form" style="grid-template-columns: 1fr 1fr; background:transparent; border:none; padding:0; gap:16px">
+              <button id="btn_cam_upload" onclick="uploadCaptured()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-cloud-arrow-up" style="font-size:18px"></i> Upload Captured</button>
+              <button id="btn_cam_attach" onclick="attachCapturedToActivity()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-paperclip" style="font-size:18px"></i> Attach to Activity</button>
+            </div>
+            
+            <div id="cam_msg" class="small" style="margin-top:8px; text-align:center; min-height:20px"></div>
+            <div id="cam_loc_msg" class="small" style="text-align:center; color:var(--text-muted)">Waiting for location signal...</div>
+          </div>
+
+          <div class="card collapsible" id="camera_settings" style="margin-top:24px; padding:0 24px; border:1px solid var(--border); box-shadow:none">
+            <div class="collapsible-header" onclick="toggleCameraSettings()" style="padding:16px 0">
+              <span class="small" style="font-weight:600; font-size:14px"><i class="fa-solid fa-sliders"></i> Camera Settings</span>
+              <span class="chev"><i class="fa-solid fa-chevron-right"></i></span>
+            </div>
+            <div class="collapsible-content">
+              <div class="settings-grid" style="padding-bottom:24px">
+                <div class="field">
+                  <label><i class="fa-solid fa-expand"></i> Resolution</label>
+                  <select id="cam_res">
+                    <option value="default">Default</option>
+                    <option value="640x480">640×480</option>
+                    <option value="1280x720">1280×720</option>
+                    <option value="1920x1080">1920×1080</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label><i class="fa-solid fa-rotate"></i> Rear camera</label>
+                  <select id="cam_rear"><option value="true">Yes</option><option value="false">No</option></select>
+                </div>
+                <div class="field">
+                  <label><i class="fa-solid fa-image"></i> JPEG quality</label>
+                  <div style="display:flex; align-items:center; gap:8px">
+                    <input id="cam_quality" type="range" min="0.5" max="0.95" step="0.05" style="flex:1" />
+                    <span id="cam_quality_val" class="small" style="width:30px">0.9</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label><i class="fa-solid fa-cloud-arrow-up"></i> Auto upload</label>
+                  <select id="cam_auto_upload"><option value="true">Yes</option><option value="false">No</option></select>
+                </div>
+                <div class="field">
+                  <label><i class="fa-solid fa-download"></i> Save copy</label>
+                  <select id="cam_download"><option value="true">Yes</option><option value="false">No</option></select>
+                </div>
+                <div class="field">
+                  <label><i class="fa-solid fa-lock"></i> Permissions</label>
+                  <div><button onclick="requestCameraPermission()" style="width:auto"><i class="fa-solid fa-key"></i> Request</button></div>
+                </div>
+                <div class="field" style="grid-column:1/-1; display:flex; justify-content:flex-end">
+                   <button onclick="saveCameraSettings()" style="width:auto"><i class="fa-solid fa-check"></i> Save Settings</button>
+                </div>
+                <div id="cam_set_msg" class="small" style="grid-column:1/-1"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const state = { token: null, user: null, watchId: null, lastPos: null, currentModule: null, refreshTimer: null, myCatchesData: [], myActivityData: [], catchLoc: null, isTracking: false, trackMap: null, trackMarker: null, trackAccuracyCircle: null, trackRoute: null, trackRoutePts: [], trackRouteLastKey: null, status: 'transit', statusAt: null, lastTrackSentAt: 0, lastTrackSentPos: null }
+      ;(() => {
+        const last = readLastLocation()
+        if (!last) return
+        state.lastPos = { lat: last.lat, lng: last.lng }
+        const el = document.getElementById('cur_coords')
+        if (el) el.textContent = `${last.lat.toFixed(6)}, ${last.lng.toFixed(6)}`
+        updateCatchCoords(last.lat, last.lng)
+        updateLocationState(true)
+      })()
+      ;(function(){
+        const qp = new URLSearchParams(location.search); const t = qp.get('token'); if (t) {
+          state.token = t
+          try {
+            const payload = JSON.parse(atob(t.split('.')[1]))
+            setAuth(t, { id: payload.id || null, role: payload.role || 'fisher', email: '' })
+            loadSpecies(); enablePush()
+          } catch {}
+        }
+      })()
+      function setAuth(token, user) {
+        state.token = token; state.user = user
+        document.body.classList.remove('auth-bg')
+        document.getElementById('auth').style.display = 'none'
+        document.getElementById('app').style.display = ''
+        document.getElementById('logout_btn').style.display = ''
+        showModule('tracking')
+        loadMyCatches()
+        setupAutoRefreshUser()
+        loadMyStatus()
+      }
+      async function register() {
+        try {
+          const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: document.getElementById('reg_name').value.trim(), email: document.getElementById('reg_email').value.trim(), password: document.getElementById('reg_pass').value, barangay: document.getElementById('reg_brgy').value }) })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Register failed')
+          setAuth(d.token, d.user)
+          loadSpecies()
+          enablePush()
+        } catch (e) { document.getElementById('auth_msg').textContent = e.message; document.getElementById('auth_msg').className = 'small error' }
+      }
+      async function login() {
+        try {
+          const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: document.getElementById('log_email').value.trim(), password: document.getElementById('log_pass').value }) })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Login failed')
+          setAuth(d.token, d.user)
+          loadSpecies()
+          enablePush()
+        } catch (e) { document.getElementById('auth_msg').textContent = e.message; document.getElementById('auth_msg').className = 'small error' }
+      }
+      async function sendSOS() {
+        try {
+          const lp = state.lastPos
+          if (!lp) { document.getElementById('track_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('track_msg').className = 'small error'; return }
+          const r = await fetch('/api/alerts', { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, body: JSON.stringify({ type:'SOS', lat: lp.lat, lng: lp.lng, note: 'SOS' }) })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error || 'Failed')
+          document.getElementById('track_msg').textContent = 'SOS sent'
+          document.getElementById('track_msg').className = 'small success'
+        } catch (e) { document.getElementById('track_msg').textContent = e.message; document.getElementById('track_msg').className = 'small error' }
+      }
+      function logout(){
+        try {
+          if (state.token && state.watchId != null) {
+            fetch('/api/track/stop', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+              body: JSON.stringify({ at: new Date().toISOString(), reason: 'logout' }),
+              keepalive: true
+            }).catch(() => {})
+          }
+        } catch {}
+        try { if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null } } catch {}
+        if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
+        state.token = null; state.user = null
+        document.getElementById('app').style.display = 'none'
+        document.getElementById('auth').style.display = ''
+        document.getElementById('logout_btn').style.display = 'none'
+        document.body.classList.add('auth-bg')
+        location.href = '/user'
+      }
+      function haversineMeters(lat1, lon1, lat2, lon2) {
+        const toRad = d => d * Math.PI/180
+        const R = 6371000
+        const dLat = toRad(lat2 - lat1)
+        const dLon = toRad(lon2 - lon1)
+        const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2
+        return 2 * R * Math.asin(Math.sqrt(a))
+      }
+      function updateLocationState(valid) {
+        const ids = ['btn_add_waypoint', 'btn_submit_act', 'btn_submit_act_upload', 'btn_submit_catch', 'btn_upload_catch', 'btn_cam_upload', 'btn_cam_attach']
+        ids.forEach(id => { const el = document.getElementById(id); if(el) el.disabled = !valid })
+        const msgIds = ['act_msg', 'catch_msg', 'cam_loc_msg']
+        if (valid) {
+          msgIds.forEach(id => { const el = document.getElementById(id); if(el && el.textContent === 'Waiting for location signal...') { el.textContent = ''; el.className = 'small' } })
+        } else {
+           msgIds.forEach(id => { const el = document.getElementById(id); if(el) { el.textContent = 'Waiting for location signal...'; el.className = 'small' } })
+        }
+      }
+      function updateCatchCoords(lat, lng) {
+        const loc = state.catchLoc || { lat, lng }
+        const txt = document.getElementById('catch_coords_text')
+        if (txt) txt.textContent = `${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`
+      }
+      function resetCatchLocation() {
+         state.catchLoc = null
+         if (state.lastPos) updateCatchCoords(state.lastPos.lat, state.lastPos.lng)
+      }
+      function setTrackingUi(active, msg, cls) {
+        state.isTracking = !!active
+        const startBtn = document.getElementById('btn_start_tracking')
+        const stopBtn = document.getElementById('btn_stop_tracking')
+        if (startBtn) startBtn.disabled = !!active
+        if (stopBtn) stopBtn.disabled = !active
+        const el = document.getElementById('track_msg')
+        if (el && msg != null) { el.textContent = msg; el.className = cls || 'small' }
+      }
+      function setTrackMapStatus(text, cls) {
+        const el = document.getElementById('track_map_status')
+        if (!el) return
+        el.textContent = text || ''
+        el.className = cls || 'small'
+      }
+      function initTrackMap() {
+        const el = document.getElementById('track_map')
+        if (!el) return
+        if (!window.L) { setTrackMapStatus('Map library failed to load', 'small error'); return }
+        if (state.trackMap) {
+          try { state.trackMap.invalidateSize() } catch {}
+          return
+        }
+        const map = window.L.map(el, { zoomControl: true })
+        window.L.tileLayer('/api/public/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map)
+        const fallback = state.lastPos ? [state.lastPos.lat, state.lastPos.lng] : [18.256, 122.202]
+        map.setView(fallback, state.lastPos ? 14 : 10)
+        state.trackMap = map
+        setTrackMapStatus('')
+      }
+      function clearTrackRoute() {
+        if (state.trackRoute) { try { state.trackRoute.remove() } catch {} }
+        state.trackRoute = null
+        state.trackRoutePts = []
+        state.trackRouteLastKey = null
+      }
+      function ensureTrackRoute() {
+        initTrackMap()
+        if (!state.trackMap || !window.L) return
+        if (!state.trackRoute) {
+          state.trackRoute = window.L.polyline([], { color: '#34c759', weight: 3, opacity: 0.85 })
+          state.trackRoute.addTo(state.trackMap)
+          state.trackRoutePts = []
+          state.trackRouteLastKey = null
+        }
+      }
+      function setStatusUi(status, at) {
+        const sel = document.getElementById('status_sel')
+        if (sel && status) sel.value = status
+        const when = document.getElementById('status_when')
+        if (when) when.textContent = at ? new Date(at).toLocaleString() : '-'
+        const text = status === 'port' ? 'In Port' : (status === 'transit' ? 'In Transit' : 'Unknown')
+        setTrackMapStatus(text, 'small')
+      }
+      async function postStatus(status, lat, lng, at) {
+        if (!state.token) throw new Error('Please login first')
+        const payload = { status, at: at || new Date().toISOString() }
+        if (lat != null) payload.lat = lat
+        if (lng != null) payload.lng = lng
+        const r = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token }, body: JSON.stringify(payload) })
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.error || 'Failed to update status')
+        return d.item || null
+      }
+      async function getFreshPosition() {
+        try {
+          await ensureGpsAvailable()
+        } catch {
+          return state.lastPos && Number.isFinite(state.lastPos.lat) && Number.isFinite(state.lastPos.lng) ? { lat: state.lastPos.lat, lng: state.lastPos.lng } : null
+        }
+        const opts = { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+        const pos = await new Promise((resolve) => navigator.geolocation.getCurrentPosition(p => resolve(p), () => resolve(null), opts))
+        if (pos && pos.coords) {
+          const lat = Number(pos.coords.latitude)
+          const lng = Number(pos.coords.longitude)
+          if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng, accuracy: pos.coords.accuracy != null ? Number(pos.coords.accuracy) : null }
+        }
+        return state.lastPos && Number.isFinite(state.lastPos.lat) && Number.isFinite(state.lastPos.lng) ? { lat: state.lastPos.lat, lng: state.lastPos.lng } : null
+      }
+      async function setStatus(nextStatus, opts) {
+        const status = nextStatus === 'port' ? 'port' : 'transit'
+        const at = new Date().toISOString()
+        if (status === 'port') {
+          const p = await getFreshPosition()
+          if (!p) throw new Error('No location yet. Start tracking or use approximate location.')
+          stopTracking({ skipNotify: true })
+          const item = await postStatus('port', p.lat, p.lng, at)
+          state.status = 'port'
+          state.statusAt = item && item.at ? item.at : at
+          setStatusUi('port', state.statusAt)
+          updateTrackMapPosition({ lat: p.lat, lng: p.lng, accuracy: p.accuracy, at: state.statusAt })
+          clearTrackRoute()
+          return
+        }
+        const p = await getFreshPosition().catch(() => null)
+        const item = await postStatus('transit', p && p.lat != null ? p.lat : undefined, p && p.lng != null ? p.lng : undefined, at)
+        state.status = 'transit'
+        state.statusAt = item && item.at ? item.at : at
+        setStatusUi('transit', state.statusAt)
+        if (!(opts && opts.skipStartTracking)) startTracking()
+      }
+      async function onStatusChange() {
+        const sel = document.getElementById('status_sel')
+        const next = sel ? sel.value : 'transit'
+        try {
+          const msg = document.getElementById('track_msg')
+          if (msg) { msg.textContent = 'Updating status...'; msg.className = 'small' }
+          await setStatus(next)
+          if (msg) { msg.textContent = ''; msg.className = 'small' }
+        } catch (e) {
+          const msg = document.getElementById('track_msg')
+          if (msg) { msg.textContent = e.message || 'Failed to update status'; msg.className = 'small error' }
+          setStatusUi(state.status || 'transit', state.statusAt || null)
+        }
+      }
+      async function loadMyStatus() {
+        if (!state.token) return
+        try {
+          const r = await fetch('/api/status/me', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json()
+          const latest = Array.isArray(d) && d.length ? d[0] : null
+          const status = latest && latest.status ? String(latest.status) : 'transit'
+          state.status = status === 'port' ? 'port' : 'transit'
+          state.statusAt = latest && latest.at ? String(latest.at) : null
+          setStatusUi(state.status, state.statusAt)
+          if (state.status === 'port' && latest && latest.lat != null && latest.lng != null) {
+            updateTrackMapPosition({ lat: Number(latest.lat), lng: Number(latest.lng), at: state.statusAt })
+          }
+        } catch {
+          state.status = state.status || 'transit'
+          setStatusUi(state.status, state.statusAt || null)
+        }
+      }
+      function updateTrackMapPosition(p) {
+        if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return
+        initTrackMap()
+        if (!state.trackMap || !window.L) return
+        const isPort = state.status === 'port'
+        const markerColor = isPort ? '#ff9500' : '#34c759'
+        const markerRadius = isPort ? 8 : 7
+        if (!state.trackMarker) {
+          state.trackMarker = window.L.circleMarker([p.lat, p.lng], { radius: markerRadius, color: markerColor, weight: 2, opacity: 1, fillColor: markerColor, fillOpacity: 0.9 })
+          state.trackMarker.addTo(state.trackMap)
+        } else {
+          state.trackMarker.setLatLng([p.lat, p.lng])
+          try { if (state.trackMarker.setRadius) state.trackMarker.setRadius(markerRadius) } catch {}
+          if (state.trackMarker.setStyle) {
+            try { state.trackMarker.setStyle({ color: markerColor, fillColor: markerColor }) } catch {}
+          }
+        }
+        if (p.accuracy != null && Number.isFinite(p.accuracy) && p.accuracy > 0) {
+          if (!state.trackAccuracyCircle) {
+            state.trackAccuracyCircle = window.L.circle([p.lat, p.lng], { radius: p.accuracy, weight: 1, opacity: 0.5, fillOpacity: 0.08 })
+            state.trackAccuracyCircle.addTo(state.trackMap)
+          } else {
+            state.trackAccuracyCircle.setLatLng([p.lat, p.lng])
+            state.trackAccuracyCircle.setRadius(p.accuracy)
+          }
+        }
+        if (state.status === 'transit') {
+          ensureTrackRoute()
+          const key = p.at || p.recordedAt || String(Date.now())
+          if (key && key !== state.trackRouteLastKey) {
+            const pts = state.trackRoutePts || []
+            pts.push([p.lat, p.lng])
+            if (pts.length > 300) pts.shift()
+            state.trackRoutePts = pts
+            try { if (state.trackRoute) state.trackRoute.setLatLngs(pts) } catch {}
+            state.trackRouteLastKey = key
+          }
+        } else {
+          clearTrackRoute()
+        }
+        try { state.trackMap.setView([p.lat, p.lng], Math.max(state.trackMap.getZoom(), 14), { animate: false }) } catch {}
+      }
+      function readLastLocation() {
+        try {
+          const raw = localStorage.getItem('last_location')
+          if (!raw) return null
+          const p = JSON.parse(raw)
+          if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return null
+          return p
+        } catch {
+          return null
+        }
+      }
+      function saveLastLocation(p) {
+        try { localStorage.setItem('last_location', JSON.stringify({ lat: p.lat, lng: p.lng, at: p.at || new Date().toISOString() })) } catch {}
+      }
+      async function ensureGpsAvailable() {
+        if (!navigator.geolocation) throw new Error('Geolocation not supported')
+        if (navigator.permissions && navigator.permissions.query) {
+          try {
+            const s = await navigator.permissions.query({ name: 'geolocation' })
+            if (s && s.state === 'denied') throw new Error('Location permission denied')
+          } catch {}
+        }
+        return true
+      }
+      async function startTracking() {
+        if (!state.token) { setTrackingUi(false, 'Please login first', 'small error'); return }
+        if (state.watchId != null) return
+        if (state.status !== 'transit') {
+          try {
+            await setStatus('transit', { skipStartTracking: true })
+          } catch (e) {
+            setTrackingUi(false, e.message || 'Failed to set transit status', 'small error')
+            return
+          }
+        }
+        try {
+          initTrackMap()
+          setTrackingUi(true, 'Requesting GPS permission...', 'small')
+          await ensureGpsAvailable()
+        } catch (e) {
+          setTrackingUi(false, e.message || 'GPS not available', 'small error')
+          return
+        }
+
+        updateLocationState(false)
+        const opts = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
+        const sendTrack = async (payload) => {
+          try {
+            await fetch('/api/track', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+              body: JSON.stringify(payload)
+            })
+            state.lastTrackSentAt = Date.now()
+            state.lastTrackSentPos = { lat: payload.lat, lng: payload.lng }
+          } catch {}
+        }
+
+        const primed = await new Promise((resolve) => {
+          navigator.geolocation.getCurrentPosition(pos => resolve(pos), () => resolve(null), opts)
+        })
+        if (primed && primed.coords) {
+          const p0 = {
+            lat: Number(primed.coords.latitude),
+            lng: Number(primed.coords.longitude),
+            accuracy: primed.coords.accuracy != null ? Number(primed.coords.accuracy) : null,
+            heading: primed.coords.heading != null ? Number(primed.coords.heading) : null,
+            speed: primed.coords.speed != null ? Number(primed.coords.speed) : null,
+            at: new Date().toISOString()
+          }
+          if (Number.isFinite(p0.lat) && Number.isFinite(p0.lng)) {
+            state.lastPos = { lat: p0.lat, lng: p0.lng }
+            document.getElementById('cur_coords').textContent = `${p0.lat.toFixed(6)}, ${p0.lng.toFixed(6)}`
+            updateCatchCoords(p0.lat, p0.lng)
+            updateTrackMapPosition(p0)
+            saveLastLocation(p0)
+            updateLocationState(true)
+            await sendTrack({ lat: p0.lat, lng: p0.lng, accuracy: p0.accuracy, heading: p0.heading, speed: p0.speed, recordedAt: p0.at })
+          }
+        }
+
+        setTrackMapStatus('Following your GPS position', 'small')
+        setTrackingUi(true, 'Tracking started', 'small success')
+
+        state.watchId = navigator.geolocation.watchPosition(async pos => {
+          if (!pos || !pos.coords) return
+          const lat = Number(pos.coords.latitude)
+          const lng = Number(pos.coords.longitude)
+          const accuracy = pos.coords.accuracy != null ? Number(pos.coords.accuracy) : null
+          const heading = pos.coords.heading != null ? Number(pos.coords.heading) : null
+          const speed = pos.coords.speed != null ? Number(pos.coords.speed) : null
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+
+          state.lastPos = { lat, lng }
+          document.getElementById('cur_coords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+          updateCatchCoords(lat, lng)
+          updateTrackMapPosition({ lat, lng, accuracy })
+          saveLastLocation({ lat, lng, at: new Date().toISOString() })
+          updateLocationState(true)
+
+          const minDist = Math.max(0, parseFloat(document.getElementById('min_dist').value) || 0)
+          const minInt = Math.max(0, (parseFloat(document.getElementById('min_int').value) || 0) * 1000)
+          const now = Date.now()
+          const moved = state.lastTrackSentPos ? haversineMeters(state.lastTrackSentPos.lat, state.lastTrackSentPos.lng, lat, lng) : Infinity
+          const okTime = (now - state.lastTrackSentAt) >= minInt
+          const okMove = moved >= minDist
+
+          if (accuracy != null && Number.isFinite(accuracy) && accuracy > 1500) {
+            setTrackingUi(true, 'Poor GPS accuracy. Move to open area or wait...', 'small warning')
+          } else {
+            setTrackingUi(true, 'Tracking active', 'small success')
+          }
+
+          if (!okTime || !okMove) return
+          try {
+            await sendTrack({ lat, lng, accuracy, heading, speed, recordedAt: new Date().toISOString() })
+          } catch {}
+        }, err => {
+          if (err && err.code === 1) {
+            setTrackingUi(false, 'Access denied. Allow location permission or use approximate location.', 'small error')
+            stopTracking()
+          } else if (err && err.code === 3) {
+            setTrackingUi(true, 'GPS timeout. Retrying...', 'small warning')
+          } else {
+            setTrackingUi(true, 'GPS signal issue. You can use approximate location.', 'small warning')
+          }
+        }, opts)
+      }
+      function stopTracking(opts) {
+        const wasTracking = state.watchId != null
+        try {
+          if (state.watchId != null) {
+            navigator.geolocation.clearWatch(state.watchId)
+            state.watchId = null
+          }
+        } catch {}
+        setTrackingUi(false, wasTracking ? 'Tracking stopped' : '', 'small')
+        setTrackMapStatus('Not tracking', 'small')
+        const hasLast = !!(state.lastPos && Number.isFinite(state.lastPos.lat) && Number.isFinite(state.lastPos.lng))
+        updateLocationState(hasLast)
+        try {
+          if (wasTracking && state.token && !(opts && opts.skipNotify)) {
+            fetch('/api/track/stop', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+              body: JSON.stringify({ at: new Date().toISOString() }),
+              keepalive: true
+            }).catch(() => {})
+          }
+        } catch {}
+      }
+      window.addEventListener('beforeunload', function () {
+        if (!state.token || state.watchId == null) return
+        try {
+          fetch('/api/track/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+            body: JSON.stringify({ at: new Date().toISOString(), reason: 'unload' }),
+            keepalive: true
+          }).catch(() => {})
+        } catch {}
+      })
+
+      async function logCatch() {
+        const loc = state.catchLoc || state.lastPos
+        if (!loc) { document.getElementById('catch_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('catch_msg').className = 'small error'; return }
+        try {
+          const speciesSel = document.getElementById('species').value
+          if (!speciesSel) { document.getElementById('catch_msg').textContent = 'Please select a species'; document.getElementById('catch_msg').className = 'small error'; return }
+          const payload = {
+            species: speciesSel,
+            netType: document.getElementById('netType').value || null,
+            weightKg: parseFloat(document.getElementById('weight').value) || null,
+            lengthCm: parseFloat(document.getElementById('length').value) || null,
+            gear: document.getElementById('gear').value || null,
+            vessel: document.getElementById('vessel').value || null,
+            photoUrl: document.getElementById('photoUrl').value || null,
+            note: document.getElementById('note').value || null,
+            lat: loc.lat, lng: loc.lng
+          }
+          const r = await fetch('/api/catches', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token }, body: JSON.stringify(payload) })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed')
+          document.getElementById('catch_msg').textContent = 'Catch logged'; document.getElementById('catch_msg').className = 'small success'
+          loadMyCatches()
+          resetCatchLocation()
+        } catch (e) { document.getElementById('catch_msg').textContent = e.message; document.getElementById('catch_msg').className = 'small error' }
+      }
+
+      async function uploadCatch() {
+        const fd = new FormData()
+        const speciesSel = document.getElementById('species').value
+        if (!speciesSel) { document.getElementById('catch_msg').textContent = 'Please select a species'; document.getElementById('catch_msg').className = 'small error'; return }
+        fd.append('species', speciesSel)
+        fd.append('netType', document.getElementById('netType').value)
+        fd.append('weightKg', document.getElementById('weight').value)
+        fd.append('lengthCm', document.getElementById('length').value)
+        fd.append('gear', document.getElementById('gear').value)
+        fd.append('vessel', document.getElementById('vessel').value)
+        fd.append('note', document.getElementById('note').value)
+        const loc = state.catchLoc || state.lastPos; if (loc) { fd.append('lat', loc.lat); fd.append('lng', loc.lng) }
+        const file = document.getElementById('photoFile').files[0]
+        if (file) fd.append('photo', file)
+        try {
+          const r = await fetch('/api/catches/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
+          document.getElementById('catch_msg').textContent = 'Catch uploaded'; document.getElementById('catch_msg').className = 'small success'
+          loadMyCatches()
+          resetCatchLocation()
+        } catch (e) { document.getElementById('catch_msg').textContent = e.message; document.getElementById('catch_msg').className = 'small error' }
+      }
+      async function loadMyCatches() {
+        try {
+          const r = await fetch('/api/catches/me', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json(); if (!r.ok) throw new Error('Load failed')
+          state.myCatchesData = d
+          
+          // Populate filter species
+          const speciesSet = new Set(d.map(c => c.species))
+          const sel = document.getElementById('filter_species')
+          if (sel) {
+             const current = sel.value
+             sel.innerHTML = '<option value="">All Species</option>'
+             speciesSet.forEach(s => {
+                const opt = document.createElement('option')
+                opt.value = s; opt.textContent = s
+                sel.appendChild(opt)
+             })
+             if (speciesSet.has(current)) sel.value = current
+          }
+          
+          renderMyCatches()
+        } catch (e) {}
+      }
+
+      function renderMyCatches() {
+        const d = state.myCatchesData || []
+        const fSpec = document.getElementById('filter_species').value
+        const fFrom = document.getElementById('filter_date_from').value
+        const fTo = document.getElementById('filter_date_to').value
+        
+        let filtered = d.filter(c => {
+           if (fSpec && c.species !== fSpec) return false
+           const date = new Date(c.capturedAt || c.createdAt)
+           if (fFrom && date < new Date(fFrom)) return false
+           if (fTo) {
+             const toDate = new Date(fTo); toDate.setHours(23,59,59,999)
+             if (date > toDate) return false
+           }
+           return true
+        })
+        
+        // Sort by date desc
+        filtered.sort((a,b) => new Date(b.capturedAt || b.createdAt) - new Date(a.capturedAt || a.createdAt))
+        
+        const countEl = document.getElementById('catches_count')
+        if(countEl) countEl.textContent = filtered.length + ' catches found'
+
+        const ul = document.getElementById('catches_list'); ul.innerHTML = ''
+        filtered.forEach(c => {
+            const li = document.createElement('li')
+            li.className = 'catch-card'
+            const dateStr = new Date(c.capturedAt || c.createdAt).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+            const photoHtml = c.photoUrl ? `<div class="catch-thumb" style="background-image:url('${c.photoUrl}')" onclick="window.open('${c.photoUrl}','_blank')"></div>` : ''
+            
+            li.innerHTML = `
+              <div class="catch-header">
+                <span class="catch-species">${c.species}</span>
+                <span class="catch-date">${dateStr}</span>
+              </div>
+              <div class="catch-body">
+                ${photoHtml}
+                <div class="catch-details">
+                  <div class="catch-meta">
+                    ${c.weightKg ? `<span><i class="fa-solid fa-weight-hanging"></i> ${c.weightKg}kg</span>` : ''}
+                    ${c.lengthCm ? `<span><i class="fa-solid fa-ruler"></i> ${c.lengthCm}cm</span>` : ''}
+                    ${c.netType ? `<span><i class="fa-solid fa-network-wired"></i> ${c.netType}</span>` : ''}
+                  </div>
+                  <div style="margin-top:auto; display:flex; align-items:center; gap:6px; font-size:12px">
+                    <i class="fa-solid fa-location-dot" style="color:var(--primary)"></i>
+                    <a href="https://maps.google.com/?q=${c.lat},${c.lng}" target="_blank" style="color:var(--primary)">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a>
+                  </div>
+                  ${c.note ? `<div style="margin-top:6px; font-style:italic; font-size:12px; color:var(--text-main)">"${c.note}"</div>` : ''}
+                </div>
+              </div>
+            `
+            ul.appendChild(li)
+        })
+      }
+      async function loadMyActivity() {
+        try {
+          const r = await fetch('/api/activity_logs/me', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json(); if (!r.ok) throw new Error('Load failed')
+          state.myActivityData = d
+          renderMyActivity()
+        } catch {}
+      }
+
+      function renderMyActivity() {
+        const d = state.myActivityData || []
+        const fCat = document.getElementById('filter_act_cat').value
+        const fFrom = document.getElementById('filter_act_date_from').value
+        const fTo = document.getElementById('filter_act_date_to').value
+        
+        let filtered = d.filter(a => {
+           if (fCat && a.category !== fCat) return false
+           const date = new Date(a.created_at)
+           if (fFrom && date < new Date(fFrom)) return false
+           if (fTo) {
+             const toDate = new Date(fTo); toDate.setHours(23,59,59,999)
+             if (date > toDate) return false
+           }
+           return true
+        })
+        
+        filtered.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+        
+        const countEl = document.getElementById('activity_count')
+        if(countEl) countEl.textContent = filtered.length + ' records found'
+        
+        const ul = document.getElementById('activity_list')
+        if (!ul) return
+        ul.innerHTML = ''
+        filtered.forEach(a => {
+            const li = document.createElement('li')
+            li.className = 'catch-card'
+            const dateStr = new Date(a.created_at).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
+            const photoHtml = a.photoUrl ? `<div class="catch-thumb" style="background-image:url('${a.photoUrl}')" onclick="window.open('${a.photoUrl}','_blank')"></div>` : ''
+            
+            li.innerHTML = `
+              <div class="catch-header">
+                <span class="catch-species" style="text-transform:capitalize">${(a.type||'').replace(/_/g, ' ')}</span>
+                <span class="catch-date">${dateStr}</span>
+              </div>
+              <div class="catch-body">
+                ${photoHtml}
+                <div class="catch-details">
+                  <div class="catch-meta">
+                    <span style="text-transform:capitalize"><i class="fa-solid fa-tag"></i> ${a.category || 'General'}</span>
+                  </div>
+                  <div style="margin-top:auto; display:flex; align-items:center; gap:6px; font-size:12px">
+                    <i class="fa-solid fa-location-dot" style="color:var(--primary)"></i>
+                    <a href="https://maps.google.com/?q=${a.location.lat},${a.location.lng}" target="_blank" style="color:var(--primary)">${a.location.lat.toFixed(5)}, ${a.location.lng.toFixed(5)}</a>
+                  </div>
+                  ${a.details && a.details.note ? `<div style="margin-top:6px; font-style:italic; font-size:12px; color:var(--text-main)">"${a.details.note}"</div>` : ''}
+                </div>
+              </div>
+            `
+            ul.appendChild(li)
+        })
+      }
+
+      if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost') && window.isSecureContext) {
+        window.addEventListener('load', function(){ navigator.serviceWorker.register('/service-worker.js').catch(function(){}) })
+      }
+      window.addEventListener('online', () => {})
+      let deferredPrompt = null
+      window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt = e; var b = document.getElementById('install_btn'); if (b) b.style.display = 'inline-flex' })
+      window.addEventListener('appinstalled', function(){ var b = document.getElementById('install_btn'); if (b) b.style.display = 'none' })
+      async function installApp(){ try { if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; var b = document.getElementById('install_btn'); if (b) b.style.display = 'none' } catch {} }
+
+      async function enablePush() {
+        try {
+          if (!('serviceWorker' in navigator) || !(location.protocol === 'https:' || location.hostname === 'localhost') || !window.isSecureContext) return
+          const cfg = await (await fetch('/api/public/config')).json()
+          if (!cfg.vapidPublicKey) return
+          const perm = await Notification.requestPermission()
+          if (perm !== 'granted') return
+          const reg = await navigator.serviceWorker.ready
+          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(cfg.vapidPublicKey) })
+          await fetch('/api/push/subscribe', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+state.token }, body: JSON.stringify(sub) })
+        } catch {}
+      }
+      function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4)
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+        const rawData = atob(base64)
+        const outputArray = new Uint8Array(rawData.length)
+        for (let i = 0; i < rawData.length; ++i) { outputArray[i] = rawData.charCodeAt(i) }
+        return outputArray
+      }
+
+      let activityRoute = []
+      const ACTIVITY_OPTIONS = {
+        fishing: [
+          { value: 'catching_fish', label: 'Catching fish using nets, traps, or hand lines' },
+          { value: 'unloading_catch', label: 'Unloading fish catch at the shore' },
+          { value: 'boat_launching_docking', label: 'Boat launching and docking' }
+        ],
+        environmental: [
+          { value: 'mangrove_planting', label: 'Mangrove planting' },
+          { value: 'coastal_cleanup', label: 'Coastal clean-up' },
+          { value: 'monitoring_water_quality', label: 'Monitoring water quality' },
+          { value: 'checking_coral_reef', label: 'Checking coral reef conditions' }
+        ],
+        tourism: [
+          { value: 'swimming_snorkeling', label: 'Swimming and snorkeling' },
+          { value: 'scuba_diving', label: 'Scuba diving' },
+          { value: 'boating_kayaking', label: 'Boating or kayaking' },
+          { value: 'beach_events', label: 'Beach events' }
+        ],
+        maritime: [
+          { value: 'cargo_unloading', label: 'Cargo unloading near small ports' },
+          { value: 'movement_of_fishing_vessels', label: 'Movement of fishing vessels' },
+          { value: 'transporting_goods_small_boats', label: 'Transporting goods using small boats' }
+        ],
+        illegal: [
+          { value: 'illegal_fishing', label: 'Illegal fishing (dynamite, cyanide)' },
+          { value: 'unauthorized_structures', label: 'Unauthorized structures along the coastline' },
+          { value: 'illegal_dumping', label: 'Illegal dumping of waste' }
+        ]
+      }
+      function populateActivities() {
+        const catEl = document.getElementById('act_cat')
+        const sel = document.getElementById('act_type')
+        if (!catEl || !sel) return
+        const cat = catEl.value
+        sel.innerHTML = ''
+        ;(ACTIVITY_OPTIONS[cat]||[]).forEach(o => { const opt = document.createElement('option'); opt.value = o.value; opt.textContent = o.label; sel.appendChild(opt) })
+      }
+      ;(function(){ const el = document.getElementById('act_cat'); if (el) el.addEventListener('change', populateActivities) })()
+      populateActivities()
+      function addWaypoint() {
+        const lp = state.lastPos
+        if (!lp) { document.getElementById('act_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('act_msg').className = 'small error'; return }
+        activityRoute.push({ lat: lp.lat, lng: lp.lng })
+        document.getElementById('route_count').textContent = String(activityRoute.length)
+        document.getElementById('act_msg').textContent = 'Waypoint added'
+        document.getElementById('act_msg').className = 'small success'
+        updateRouteMap()
+      }
+      function updateRouteMap() {
+        return
+      }
+      async function submitActivity() {
+        const lp = state.lastPos
+        if (!lp) { document.getElementById('act_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('act_msg').className = 'small error'; return }
+        const type = document.getElementById('act_type').value
+        const category = document.getElementById('act_cat').value
+        const note = document.getElementById('act_note').value
+        try {
+          const r = await fetch('/api/activity_logs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token }, body: JSON.stringify({ type, category, lat: lp.lat, lng: lp.lng, line: activityRoute, details: note ? { note } : null }) })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed')
+          document.getElementById('act_msg').textContent = 'Activity logged'
+          document.getElementById('act_msg').className = 'small success'
+          activityRoute = []
+          document.getElementById('route_count').textContent = '0'
+          updateRouteMap()
+          loadMyActivity()
+        } catch (e) { document.getElementById('act_msg').textContent = e.message; document.getElementById('act_msg').className = 'small error' }
+      }
+      async function submitActivityUpload() {
+        const lp = state.lastPos
+        if (!lp) { document.getElementById('act_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('act_msg').className = 'small error'; return }
+        const type = document.getElementById('act_type').value
+        const category = document.getElementById('act_cat').value
+        const note = document.getElementById('act_note').value
+        const f = document.getElementById('act_photo')
+        if (!f || !f.files || !f.files[0]) { document.getElementById('act_msg').textContent = 'Select a photo'; document.getElementById('act_msg').className = 'small error'; return }
+        try {
+          const fd = new FormData()
+          fd.append('type', type)
+          fd.append('category', category)
+          fd.append('note', note)
+          fd.append('lat', lp.lat)
+          fd.append('lng', lp.lng)
+          fd.append('line', JSON.stringify(activityRoute||[]))
+          fd.append('photo', f.files[0])
+          const r = await fetch('/api/activity_logs/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
+          document.getElementById('act_msg').textContent = 'Activity + photo saved'
+          document.getElementById('act_msg').className = 'small success'
+          activityRoute = []
+          document.getElementById('route_count').textContent = '0'
+          updateRouteMap()
+          loadMyActivity()
+          f.value = ''
+        } catch (e) { document.getElementById('act_msg').textContent = e.message; document.getElementById('act_msg').className = 'small error' }
+      }
+      async function attachCapturedToActivity() {
+        const lp = state.lastPos
+        if (!lp) { document.getElementById('act_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('act_msg').className = 'small error'; return }
+        if (!camBlob) { document.getElementById('act_msg').textContent = 'Capture a photo first'; document.getElementById('act_msg').className = 'small error'; return }
+        const type = document.getElementById('act_type').value
+        const category = document.getElementById('act_cat').value
+        const note = document.getElementById('act_note').value
+        try {
+          const fd = new FormData()
+          fd.append('type', type)
+          fd.append('category', category)
+          fd.append('note', note)
+          fd.append('lat', lp.lat)
+          fd.append('lng', lp.lng)
+          fd.append('line', JSON.stringify(activityRoute||[]))
+          fd.append('photo', camBlob, 'capture.jpg')
+          const r = await fetch('/api/activity_logs/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
+          document.getElementById('act_msg').textContent = 'Captured photo attached to activity'
+          document.getElementById('act_msg').className = 'small success'
+          camBlob = null
+          activityRoute = []
+          document.getElementById('route_count').textContent = '0'
+          updateRouteMap()
+          loadMyActivity()
+          retakePhoto()
+        } catch (e) { document.getElementById('act_msg').textContent = e.message; document.getElementById('act_msg').className = 'small error' }
+      }
+
+      let camStream = null
+      let camBlob = null
+      function getCamSettings() {
+        try { const s = JSON.parse(localStorage.getItem('cam_settings')||'{}'); return { rear: s.rear!==undefined ? !!s.rear : true, res: s.res||'default', quality: s.quality||0.9, auto_upload: s.auto_upload!==undefined ? !!s.auto_upload : false, download: s.download!==undefined ? !!s.download : false } } catch { return { rear:true, res:'default', quality:0.9, auto_upload:false, download:false } }
+      }
+      function loadCameraSettings() {
+        const s = getCamSettings()
+        document.getElementById('cam_res').value = s.res
+        document.getElementById('cam_rear').value = String(!!s.rear)
+        document.getElementById('cam_quality').value = String(s.quality)
+        document.getElementById('cam_quality_val').textContent = String(s.quality)
+        document.getElementById('cam_auto_upload').value = String(!!s.auto_upload)
+        document.getElementById('cam_download').value = String(!!s.download)
+      }
+      function saveCameraSettings() {
+        const s = {
+          res: document.getElementById('cam_res').value,
+          rear: document.getElementById('cam_rear').value === 'true',
+          quality: parseFloat(document.getElementById('cam_quality').value) || 0.9,
+          auto_upload: document.getElementById('cam_auto_upload').value === 'true',
+          download: document.getElementById('cam_download').value === 'true'
+        }
+        localStorage.setItem('cam_settings', JSON.stringify(s))
+        document.getElementById('cam_set_msg').textContent = 'Saved'
+        document.getElementById('cam_set_msg').className = 'small success'
+      }
+      document.getElementById('cam_quality').addEventListener('input', function(){ document.getElementById('cam_quality_val').textContent = String(this.value) })
+      loadCameraSettings()
+      function toggleCameraSettings(){
+        const card = document.getElementById('camera_settings')
+        card.classList.toggle('open')
+      }
+      async function startCamera() {
+        try {
+          if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            document.getElementById('cam_msg').textContent = 'Camera requires secure context. Use file upload or HTTPS.'
+            document.getElementById('cam_msg').className = 'small error'
+            return
+          }
+          stopCamera()
+          const set = getCamSettings()
+          const constraints = { video: {} }
+          constraints.video.facingMode = { ideal: set.rear ? 'environment' : 'user' }
+          if (set.res && set.res !== 'default') {
+            const parts = set.res.split('x'); const w = parseInt(parts[0],10); const h = parseInt(parts[1],10)
+            if (w && h) { constraints.video.width = { ideal: w }; constraints.video.height = { ideal: h } }
+          }
+          let s = null
+          try { s = await navigator.mediaDevices.getUserMedia(constraints) } catch { s = await navigator.mediaDevices.getUserMedia({ video: true }) }
+          camStream = s
+          const v = document.getElementById('cam_video')
+          v.setAttribute('playsinline','')
+          v.setAttribute('autoplay','')
+          v.setAttribute('muted','')
+          v.muted = true
+          v.playsInline = true
+          v.srcObject = s
+          await v.play()
+          await new Promise(r => { if (v.readyState >= 2) r(); else v.onloadedmetadata = () => r() })
+          document.getElementById('cam_msg').textContent = 'Camera ready'
+          document.getElementById('cam_msg').className = 'small success'
+        } catch (e) {
+          document.getElementById('cam_msg').textContent = 'Camera error'
+          document.getElementById('cam_msg').className = 'small error'
+        }
+      }
+      function stopCamera() {
+        try {
+          if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null }
+          const v = document.getElementById('cam_video'); v.srcObject = null
+        } catch {}
+      }
+      function updateCameraUI(hasPhoto) {
+        document.getElementById('btn_cam_capture').style.display = hasPhoto ? 'none' : 'flex'
+        document.getElementById('btn_cam_retake').style.display = hasPhoto ? 'flex' : 'none'
+        const ids = ['btn_cam_upload', 'btn_cam_attach']
+        ids.forEach(id => { const el = document.getElementById(id); if(el) el.disabled = !hasPhoto })
+        
+        const v = document.getElementById('cam_video')
+        const c = document.getElementById('cam_canvas')
+        if (hasPhoto) {
+           v.style.display = 'none'
+           c.style.display = 'block'
+        } else {
+           v.style.display = 'block'
+           c.style.display = 'none'
+        }
+      }
+      function retakePhoto() {
+        camBlob = null
+        updateCameraUI(false)
+        document.getElementById('cam_msg').textContent = 'Camera ready'
+        document.getElementById('cam_msg').className = 'small success'
+      }
+      function capturePhoto() {
+        try {
+          const set = getCamSettings()
+          const v = document.getElementById('cam_video')
+          const c = document.getElementById('cam_canvas')
+          const w = v.videoWidth || 640
+          const h = v.videoHeight || 480
+          if (!w || !h) { document.getElementById('cam_msg').textContent = 'Camera not ready'; document.getElementById('cam_msg').className = 'small error'; return }
+          c.width = w; c.height = h
+          const ctx = c.getContext('2d')
+          ctx.drawImage(v, 0, 0, w, h)
+          c.style.display = 'block'
+          c.toBlob(b => {
+            camBlob = b
+            document.getElementById('cam_msg').textContent = 'Photo captured'
+            document.getElementById('cam_msg').className = 'small success'
+            if (set.download) {
+              const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'capture.jpg'; a.click()
+            }
+            if (set.auto_upload) { uploadCaptured() }
+          }, 'image/jpeg', set.quality || 0.9)
+        } catch (e) {
+          document.getElementById('cam_msg').textContent = 'Capture failed'
+          document.getElementById('cam_msg').className = 'small error'
+        }
+      }
+      async function uploadCaptured() {
+        try {
+          if (!camBlob) { document.getElementById('cam_msg').textContent = 'No photo'; document.getElementById('cam_msg').className = 'small error'; return }
+          const fd = new FormData()
+          fd.append('species', document.getElementById('species').value)
+          fd.append('weightKg', document.getElementById('weight').value)
+          fd.append('lengthCm', document.getElementById('length').value)
+          fd.append('gear', document.getElementById('gear').value)
+          fd.append('vessel', document.getElementById('vessel').value)
+          fd.append('note', document.getElementById('note').value)
+          const lp = state.lastPos; if (lp) { fd.append('lat', lp.lat); fd.append('lng', lp.lng) }
+          fd.append('photo', camBlob, 'capture.jpg')
+          const r = await fetch('/api/catches/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd })
+          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
+          document.getElementById('cam_msg').textContent = 'Captured photo uploaded'
+          document.getElementById('cam_msg').className = 'small success'
+          camBlob = null
+          stopCamera()
+          loadMyCatches()
+        } catch (e) {
+          document.getElementById('cam_msg').textContent = e.message
+          document.getElementById('cam_msg').className = 'small error'
+        }
+      }
+      async function requestCameraPermission() {
+        try {
+          const set = getCamSettings()
+          const cons = { video: { facingMode: { ideal: set.rear ? 'environment' : 'user' } } }
+          let s = null
+          try { s = await navigator.mediaDevices.getUserMedia(cons) } catch { s = await navigator.mediaDevices.getUserMedia({ video: true }) }
+          if (s) { s.getTracks().forEach(t => t.stop()) }
+          document.getElementById('cam_set_msg').textContent = 'Permission granted'
+          document.getElementById('cam_set_msg').className = 'small success'
+        } catch (e) {
+          document.getElementById('cam_set_msg').textContent = 'Permission error'
+          document.getElementById('cam_set_msg').className = 'small error'
+        }
+      }
+      async function useApproxLocation() {
+        try {
+          let lat = null, lng = null
+          // Attempt 1: ipapi.co
+          try {
+            const r = await fetch('https://ipapi.co/json/')
+            const d = await r.json()
+            if (d && d.latitude != null && d.longitude != null) { lat = parseFloat(d.latitude); lng = parseFloat(d.longitude) }
+          } catch {}
+          
+          // Attempt 2: ipinfo.io
+          if (lat == null || lng == null) {
+            try {
+              const r2 = await fetch('https://ipinfo.io/json')
+              const d2 = await r2.json()
+              if (d2 && d2.loc) { const parts = String(d2.loc).split(','); lat = parseFloat(parts[0]); lng = parseFloat(parts[1]) }
+            } catch {}
+          }
+          
+          // Attempt 3: ipwho.is
+          if (lat == null || lng == null) {
+            try {
+              const r3 = await fetch('https://ipwho.is/')
+              const d3 = await r3.json()
+              if (d3 && d3.success && d3.latitude && d3.longitude) { lat = parseFloat(d3.latitude); lng = parseFloat(d3.longitude) }
+            } catch {}
+          }
+
+          // Fallback: Default to Gonzaga, Cagayan
+          let isDefault = false
+          if (lat == null || lng == null) {
+             lat = 18.256; lng = 122.202
+             isDefault = true
+          }
+
+          if (isFinite(lat) && isFinite(lng)) {
+            state.lastPos = { lat, lng }
+            document.getElementById('cur_coords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+            updateCatchCoords(lat, lng)
+            try {
+              initTrackMap()
+              updateTrackMapPosition({ lat, lng })
+              saveLastLocation({ lat, lng, at: new Date().toISOString() })
+            } catch {}
+            if (isDefault) {
+                document.getElementById('track_msg').textContent = 'Using default location (Gonzaga)'
+                document.getElementById('track_msg').className = 'small warning'
+            } else {
+                document.getElementById('track_msg').textContent = 'Using approximate location'
+                document.getElementById('track_msg').className = 'small success'
+            }
+            updateLocationState(true)
+          } else {
+            // Should not happen due to default fallback
+            document.getElementById('track_msg').textContent = 'Location unavailable'
+            document.getElementById('track_msg').className = 'small error'
+          }
+        } catch (e) {
+           console.error('Approx location error:', e)
+           // Absolute final fallback
+           const lat = 18.256, lng = 122.202
+           state.lastPos = { lat, lng }
+           document.getElementById('cur_coords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+           updateCatchCoords(lat, lng)
+           try {
+             initTrackMap()
+             updateTrackMapPosition({ lat, lng })
+             saveLastLocation({ lat, lng, at: new Date().toISOString() })
+           } catch {}
+           document.getElementById('track_msg').textContent = 'Using default location'
+           updateLocationState(true)
+        }
+      }
+      async function loadSpecies() {
+        try {
+          const r = await fetch('/api/species')
+          const d = await r.json()
+          const sel = document.getElementById('species'); 
+          if (!sel) return
+          const current = sel.value
+          sel.innerHTML = '<option value="">Select Types of Species</option>'
+          d.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o) })
+          if (current) sel.value = current
+        } catch {}
+      }
+      function showModule(id) {
+        const ids = ['tracking','catch','my_catches','activity','camera']
+        ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
+        state.currentModule = id
+        const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
+        if (window.matchMedia('(max-width: 800px)').matches) toggleDrawer(false)
+        
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            if (id === 'tracking') {
+              try { initTrackMap() } catch {}
+              try { if (state.lastPos) updateTrackMapPosition({ lat: state.lastPos.lat, lng: state.lastPos.lng }) } catch {}
+              try { setTrackingUi(state.watchId != null) } catch {}
+            }
+            if (id === 'catch') {
+              if (state.lastPos) updateCatchCoords(state.lastPos.lat, state.lastPos.lng)
+            }
+            
+            if (id === 'my_catches') {
+               loadMyCatches()
+            }
+            
+            if (id === 'activity') { 
+              try { loadMyActivity(); updateRouteMap() } catch {} 
+            }
+          }, 300)
+        })
+      }
+      function refreshDataUser(){
+        if (!state.token) return
+        const m = state.currentModule
+        if (m === 'my_catches') { try { loadMyCatches() } catch {} }
+        if (m === 'catch') { try { loadSpecies() } catch {} }
+        if (m === 'activity') { try { loadMyActivity() } catch {} }
+      }
+      function setupAutoRefreshUser(){
+        if (state.refreshTimer) clearInterval(state.refreshTimer)
+        state.refreshTimer = setInterval(refreshDataUser, 30000)
+      }
+      function toggleDrawer(open) {
+        const sb = document.getElementById('sidebar')
+        const ov = document.getElementById('drawer_overlay')
+        if (open) { sb.classList.add('open'); ov.classList.add('show') } else { sb.classList.remove('open'); ov.classList.remove('show') }
+      }
+      window.addEventListener('keydown', function(e){ if (e.key === 'Escape') toggleDrawer(false) })
+      function togglePassword(inputId, btnId){
+        const i = document.getElementById(inputId)
+        const b = document.getElementById(btnId)
+        if (!i || !b) return
+        const isPass = i.type === 'password'
+        i.type = isPass ? 'text' : 'password'
+        b.textContent = isPass ? '🔓' : '🔒'
+      }
+    </script>
+  </body>
+</html>
