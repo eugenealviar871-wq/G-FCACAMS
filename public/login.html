@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a84ff" />
+    <title>Login - FishMonitor</title>
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+      :root {
+        --primary: #007aff;
+        --primary-hover: #0056b3;
+        --surface: #ffffff;
+        --background: #f5f5f7;
+        --text-main: #1d1d1f;
+        --text-muted: #86868b;
+        --border: #d2d2d7;
+        --success: #34c759;
+        --error: #ff3b30;
+        --shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);
+        --radius: 16px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #1c1c1e;
+          --background: #000000;
+          --text-main: #f5f5f7;
+          --text-muted: #86868b;
+          --border: #424245;
+        }
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        margin: 0;
+        background-color: var(--background);
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('/assets/auth-bg.jpg');
+        background-size: cover;
+        background-position: center;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        padding: 40px;
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+      }
+      .logo { width: 64px; height: 64px; margin-bottom: 16px; }
+      h1 { font-size: 24px; font-weight: 800; margin: 0; color: var(--text-main); }
+      p { color: var(--text-muted); font-size: 14px; margin-top: 8px; margin-bottom: 24px; }
+      
+      .field { text-align: left; margin-bottom: 16px; }
+      label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-muted); }
+      input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--text-main);
+        font-size: 16px;
+        box-sizing: border-box;
+      }
+      input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2); }
+      
+      button {
+        width: 100%;
+        padding: 14px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: background 0.2s;
+      }
+      button:hover { background: var(--primary-hover); }
+      
+      .passwrap { position: relative; }
+      .toggle-eye {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0;
+        margin: 0;
+        width: auto;
+      }
+      
+      .msg { font-size: 13px; margin-top: 16px; min-height: 20px; }
+      .msg.error { color: var(--error); }
+      .msg.success { color: var(--success); }
+      
+      .links { margin-top: 24px; font-size: 14px; }
+      .links a { color: var(--primary); text-decoration: none; font-weight: 600; }
+      .links a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img src="/logo.svg" alt="Logo" class="logo" />
+      <h1>FishMonitor</h1>
+      <p>Sign in to your account</p>
+      
+      <div id="success_msg" class="msg success" style="display:none; margin-bottom:16px; padding:12px; background:rgba(52, 199, 89, 0.1); border-radius:12px; border:1px solid var(--success)"></div>
+
+      <div class="field">
+        <label>Email Address</label>
+        <input id="email" type="email" />
+      </div>
+      
+      <div class="field">
+        <label>Password</label>
+        <div class="passwrap">
+          <input id="password" type="password" />
+          <button class="toggle-eye" onclick="togglePassword()">🔒</button>
+        </div>
+      </div>
+      
+      <button onclick="login()">Login</button>
+      <div id="msg" class="msg"></div>
+      
+      <div class="links">
+        Don't have an account? <a href="/register.html">Register</a>
+      </div>
+    </div>
+
+    <script>
+      // Check if redirected from registration
+      const params = new URLSearchParams(location.search);
+      if (params.has('registered')) {
+        const sm = document.getElementById('success_msg');
+        sm.textContent = 'Account created successfully! Please log in to continue.';
+        sm.style.display = 'block';
+      }
+
+      function togglePassword() {
+        const p = document.getElementById('password');
+        const btn = document.querySelector('.toggle-eye');
+        if (p.type === 'password') {
+          p.type = 'text';
+          btn.textContent = '🔓';
+        } else {
+          p.type = 'password';
+          btn.textContent = '🔒';
+        }
+      }
+
+      async function login() {
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const msg = document.getElementById('msg');
+        msg.textContent = 'Logging in...';
+        msg.className = 'msg';
+
+        try {
+          const r = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || 'Login failed');
+
+          localStorage.setItem('fish_token', d.token);
+          localStorage.setItem('fish_user', JSON.stringify(d.user));
+
+          if (d.user.role === 'admin') {
+            location.href = '/admin.html';
+          } else {
+            location.href = '/user.html';
+          }
+        } catch (e) {
+          msg.textContent = e.message;
+          msg.className = 'msg error';
+        }
+      }
+    </script>
+  </body>
+</html>

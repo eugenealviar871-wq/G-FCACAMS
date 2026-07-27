@@ -15,29 +15,28 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/config.js"></script>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root {
-        --primary: #007aff;
-        --primary-hover: #0056b3;
-        --surface: #ffffff;
-        --background: #f5f5f7;
-        --text-main: #1d1d1f;
-        --text-muted: #86868b;
-        --border: #d2d2d7;
-        --success: #34c759;
-        --error: #ff3b30;
+        --primary: #0077B6; /* Ocean Blue */
+        --primary-hover: #0096C7;
+        --surface: #ffffff; /* White cards */
+        --background: #EAF7FF; /* Main Background */
+        --text-main: #023047; /* Headings */
+        --text-muted: #4F5D75; /* Secondary Text */
+        --border: #D6EAF8; /* Borders */
+        --success: #06D6A0;
+        --warning: #FFB703;
+        --error: #EF476F;
+        --sidebar-bg: #0F4C81; /* Deep Ocean Blue */
+        --sidebar-active: #00B4D8; /* Bright Aqua Blue */
+        --sidebar-hover: #48CAE4;
         --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
-        --shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);
-        --radius: 16px;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --surface: #1c1c1e;
-          --background: #000000;
-          --text-main: #f5f5f7;
-          --text-muted: #86868b;
-          --border: #424245;
-        }
+        --shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        --radius: 20px; /* More rounded corners */
       }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -114,6 +113,12 @@
       button:active { transform: translateY(0); }
       button:disabled { background: var(--text-muted); opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
       
+      table { border-collapse: separate; border-spacing: 0; width: 100%; margin-top: 16px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+      th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+      th { background: rgba(0,0,0,0.02); font-weight: 800; color: var(--primary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+      tr:last-child td { border-bottom: none; }
+      tr:hover td { background: #F3F8FF; }
+      
       .card {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -142,14 +147,14 @@
       
       #sidebar { position: sticky; top: 90px; }
       #sidebar .group {
-        background: var(--surface);
+        background: var(--sidebar-bg); /* Deep Ocean Blue */
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        padding: 12px;
+        padding: 16px;
         box-shadow: var(--shadow);
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 8px;
       }
       #sidebar button {
         display: flex;
@@ -157,21 +162,22 @@
         gap: 12px;
         width: 100%;
         text-align: left;
-        padding: 10px 14px;
+        padding: 12px 16px;
         margin: 0;
-        border-radius: 8px;
+        border-radius: 12px;
         background: transparent;
-        color: var(--text-muted);
+        color: rgba(255,255,255,0.8); /* Light white text for sidebar */
         box-shadow: none;
         font-weight: 500;
         border: none;
+        transition: all 0.2s;
       }
-      #sidebar button:hover { background: rgba(0,0,0,0.03); color: var(--primary); }
-      #sidebar button.active { background: rgba(0, 122, 255, 0.1); color: var(--primary); font-weight: 600; }
+      #sidebar button:hover { background: var(--sidebar-hover); color: white; }
+      #sidebar button.active { background: var(--sidebar-active); color: white; font-weight: 600; box-shadow: 0 4px 12px rgba(0,180,216,0.4); }
       #sidebar button .icon { font-size: 16px; width: 24px; text-align: center; }
       
       #content_top { display: flex; justify-content: flex-end; margin-bottom: 24px; gap: 12px; }
-      #menu_btn, #refresh_btn, #sos_btn {
+      #menu_btn, #refresh_btn {
         background: var(--surface);
         color: var(--text-main);
         border: 1px solid var(--border);
@@ -190,12 +196,10 @@
         width: auto;
       }
       #menu_btn:hover, #refresh_btn:hover { background: var(--background); border-color: var(--text-muted); }
-      #sos_btn { background: #EA4335; color: white; border-color: #c5221f; }
-      #sos_btn:hover { background: #d93025; }
 
       #drawer_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 999; backdrop-filter: blur(2px); }
       @media (max-width: 900px) {
-        #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-105%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow); margin: 0; padding: 0; background: var(--surface); border-right: 1px solid var(--border); z-index: 1000; width: 280px; }
+        #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-105%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow); margin: 0; padding: 0; background: var(--sidebar-bg); border-right: 1px solid var(--border); z-index: 1000; width: 280px; }
         #sidebar .group { border: none; box-shadow: none; border-radius: 0; height: 100%; padding: 24px 16px; }
         #sidebar.open { transform: translateX(0); }
         #drawer_overlay.show { display: block; }
@@ -270,94 +274,94 @@
     </style>
   </head>
   <body class="auth-bg">
-    <div class="topbar"><img src="/logo.svg" alt="FishMonitor"/><span class="title">Fish Catch and Coastal Activity Logger</span><button id="logout_btn" class="logout_btn" style="display:none" onclick="logout()">Logout</button></div>
-    <div class="card" id="auth">
-      <h2 style="margin-bottom:24px; color:var(--primary)"><i class="fa-solid fa-right-to-bracket"></i> Welcome</h2>
-      <div class="row">
-        <div style="text-align:left">
-          <h3 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:8px">Register</h3>
-          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
-             <label class="small" style="font-weight:600">Full Name</label>
-             <input id="reg_name" placeholder="Name" />
-          </div>
-          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
-             <label class="small" style="font-weight:600">Email Address</label>
-             <input id="reg_email" placeholder="Email" />
-          </div>
-          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
-             <label class="small" style="font-weight:600">Barangay</label>
-             <select id="reg_brgy">
-              <option value="">Select Barangay</option>
-              <option>Amunitan</option>
-              <option>Batangan</option>
-              <option>Baua</option>
-              <option>Cabanbanan Norte</option>
-              <option>Cabanbanan Sur</option>
-              <option>Cabiraoan</option>
-              <option>Callao</option>
-              <option>Calayan</option>
-              <option>Caroan</option>
-              <option>Casitan</option>
-              <option>Flourishing (Poblacion)</option>
-              <option>Ipil</option>
-              <option>Magrafil</option>
-              <option>Minanga</option>
-              <option>Rebecca (Nagbabacalan)</option>
-              <option>Paradise (Poblacion)</option>
-              <option>Pateng</option>
-              <option>Progressive (Poblacion)</option>
-              <option>San Jose</option>
-              <option>Santa Clara</option>
-              <option>Santa Cruz</option>
-              <option>Santa Maria</option>
-              <option>Smart (Poblacion)</option>
-              <option>Tapel</option>
-            </select>
-          </div>
-          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
-             <label class="small" style="font-weight:600">Password</label>
-             <div class="passwrap">
-               <input id="reg_pass" type="password" placeholder="Password" />
-               <button id="reg_pass_toggle" class="toggle-eye" onclick="togglePassword('reg_pass','reg_pass_toggle')">🔒</button>
-             </div>
-          </div>
-          <button onclick="register()" style="margin-top:16px">Register</button>
-        </div>
-        <div style="text-align:left; border-left:1px solid var(--border); padding-left:24px">
-          <h3 style="margin-top:0; border-bottom:1px solid var(--border); padding-bottom:8px">Login</h3>
-          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
-             <label class="small" style="font-weight:600">Email Address</label>
-             <input id="log_email" placeholder="Email" />
-          </div>
-          <div class="field" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px">
-             <label class="small" style="font-weight:600">Password</label>
-             <div class="passwrap">
-               <input id="log_pass" type="password" placeholder="Password" />
-               <button id="log_pass_toggle" class="toggle-eye" onclick="togglePassword('log_pass','log_pass_toggle')">🔒</button>
-             </div>
-          </div>
-          <button onclick="login()" style="margin-top:16px">Login</button>
-        </div>
+    <div class="topbar">
+      <div style="display:flex; align-items:center; gap:12px">
+        <img src="/logo.svg" alt="FishMonitor"/>
+        <span class="title" style="font-size:16px; white-space:nowrap">BFAR Monitoring</span>
       </div>
-      <div id="auth_msg" class="small" style="margin-top:16px; min-height:20px"></div>
+      <div id="user_info" style="margin-left:auto; display:flex; align-items:center; gap:16px">
+        <div style="text-align:right; display:none" id="user_profile">
+          <div id="user_name" style="font-weight:600; font-size:14px"></div>
+          <div id="user_role" style="font-size:11px; text-transform:uppercase; color:var(--text-muted)"></div>
+        </div>
+        <button id="logout_btn" class="logout_btn" style="display:none" onclick="logout()">Logout</button>
+      </div>
     </div>
     <div class="layout" id="app" style="display:none">
       <div id="drawer_overlay" onclick="toggleDrawer(false)"></div>
       <div id="sidebar" role="navigation" aria-label="Main menu">
         <div class="group">
+          <button data-module="dashboard" onclick="showModule('dashboard')"><i class="fa-solid fa-house icon"></i> Dashboard</button>
           <button data-module="tracking" onclick="showModule('tracking')"><i class="fa-solid fa-map-location-dot icon"></i> GPS Tracking</button>
+          <button data-module="vessels" onclick="showModule('vessels')"><i class="fa-solid fa-ship icon"></i> Vessel Information</button>
           <button data-module="catch" onclick="showModule('catch')"><i class="fa-solid fa-fish icon"></i> Log Catch</button>
-          <button data-module="my_catches" onclick="showModule('my_catches')"><i class="fa-solid fa-clipboard-list icon"></i> My Catches</button>
+          <button data-module="my_catches" onclick="showModule('my_catches')"><i class="fa-solid fa-clipboard-list icon"></i> Catches</button>
           <button data-module="activity" onclick="showModule('activity')"><i class="fa-solid fa-water icon"></i> Coastal Activity</button>
-          <button data-module="camera" onclick="showModule('camera')"><i class="fa-solid fa-camera icon"></i> Camera</button>
+          <button data-module="reports" onclick="showModule('reports')"><i class="fa-solid fa-chart-pie icon"></i> Reports</button>
         </div>
       </div>
       <div id="content">
         <div id="content_top">
-          <button id="menu_btn" onclick="toggleDrawer(true)"><img src="/logo.svg" alt="" style="height:18px"/> Home</button>
+          <button id="menu_btn" onclick="toggleDrawer(true)"><i class="fa-solid fa-bars"></i> Menu</button>
           <button id="refresh_btn" onclick="refreshDataUser()"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
-          <button id="sos_btn" onclick="sendSOS()"><i class="fa-solid fa-life-ring"></i> SOS</button>
           <button id="install_btn" style="display:none" onclick="installApp()"><i class="fa-solid fa-download"></i> Install App</button>
+        </div>
+
+        <div id="dashboard" style="display:none">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px; margin-bottom:24px">
+            <div class="card" style="margin:0; padding:20px; display:flex; align-items:center; gap:16px">
+              <div style="background:rgba(0,122,255,0.1); width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--primary)">
+                <i class="fa-solid fa-weight-hanging" style="font-size:20px"></i>
+              </div>
+              <div>
+                <div class="small">Catch Today</div>
+                <div id="stat_catch_today" style="font-size:24px; font-weight:800">0.0 kg</div>
+              </div>
+            </div>
+            <div class="card" style="margin:0; padding:20px; display:flex; align-items:center; gap:16px">
+              <div style="background:rgba(52,199,89,0.1); width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--success)">
+                <i class="fa-solid fa-ship" style="font-size:20px"></i>
+              </div>
+              <div>
+                <div class="small">Active Vessels</div>
+                <div id="stat_active_vessels" style="font-size:24px; font-weight:800">0</div>
+              </div>
+            </div>
+            <div class="card" style="margin:0; padding:20px; display:flex; align-items:center; gap:16px">
+              <div style="background:rgba(255,149,0,0.1); width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#ff9500">
+                <i class="fa-solid fa-water" style="font-size:20px"></i>
+              </div>
+              <div>
+                <div class="small">Weekly Activities</div>
+                <div id="stat_activities_week" style="font-size:24px; font-weight:800">0</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr; gap:24px; margin-bottom:24px">
+            <div class="card" style="margin:0">
+              <h2><i class="fa-solid fa-chart-line" style="color:var(--primary)"></i> Monthly Catch Trend</h2>
+              <div style="height:250px"><canvas id="catchChart"></canvas></div>
+            </div>
+            <div class="card" style="margin:0">
+              <h2><i class="fa-solid fa-trophy" style="color:#ff9500"></i> Top Species This Month</h2>
+              <div id="top_species_list" style="display:flex; flex-direction:column; gap:12px"></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin:0">
+            <h2><i class="fa-solid fa-map" style="color:var(--success)"></i> Live Vessel Map</h2>
+            <div id="dashboard_map" style="width:100%; height:400px; border-radius:12px; border:1px solid var(--border)"></div>
+          </div>
+        </div>
+
+        <div class="card" id="reports" style="display:none">
+          <h2><i class="fa-solid fa-chart-pie" style="color:var(--primary)"></i> Reports & Insights</h2>
+          <div style="background:var(--background); padding:32px; border-radius:12px; text-align:center">
+             <i class="fa-solid fa-file-invoice" style="font-size:48px; color:var(--text-muted); margin-bottom:16px"></i>
+             <p>Your fishing activity reports will appear here. This section is currently under development.</p>
+             <button onclick="showModule('dashboard')" style="width:auto; padding:12px 32px">Back to Dashboard</button>
+          </div>
         </div>
         <div class="card" id="tracking" style="display:none">
           <h2><i class="fa-solid fa-map-location-dot" style="color:var(--primary)"></i> GPS Tracking</h2>
@@ -379,8 +383,7 @@
             <div>
               <label class="small"><i class="fa-solid fa-ship"></i> Status</label>
               <select id="status_sel" onchange="onStatusChange()" style="width:100%">
-                <option value="transit">In Transit</option>
-                <option value="port">In Port</option>
+                <option value="transit">Active</option>
               </select>
             </div>
             <div>
@@ -407,7 +410,7 @@
                 </div>
             </div>
           </div>
-          
+
           <div id="track_msg" class="small" style="margin-top:8px; text-align:center; min-height:20px"></div>
           <div id="track_map_status" class="small" style="text-align:center; min-height:18px"></div>
           <div id="track_map" style="width:100%; height:320px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-top:12px"></div>
@@ -429,7 +432,8 @@
             <div class="grid-form" style="margin-bottom:0">
                 <div>
                 <label class="small"><i class="fa-solid fa-fish-fins"></i> Species</label>
-                <select id="species"></select>
+                <input id="species" list="speciesList" placeholder="Search or select a species...">
+                <datalist id="speciesList"></datalist>
                 </div>
                 <div>
                 <label class="small"><i class="fa-solid fa-weight-hanging"></i> Weight (kg)</label>
@@ -447,41 +451,42 @@
             <div class="grid-form" style="margin-bottom:0">
                 <div style="grid-column:1/-1">
                 <label class="small"><i class="fa-solid fa-network-wired"></i> Net Type</label>
-                <select id="netType">
-                    <option value="">Select Types of nets</option>
-                    <optgroup label="Lambat (Nets)">
-                    <option>Pangangawil (Gill Net)</option>
-                    <option>Sapyaw</option>
-                    <option>Sigay</option>
-                    <option>Liting</option>
-                    <option>Sirut</option>
-                    <option>Pannariway</option>
-                    <option>Lambat Lihit (Fine Mesh Net)</option>
-                    <option>Pukot / Beach Seine</option>
-                    <option>Sinsoro / Push Net</option>
-                    <option>Trawl Net</option>
-                    <option>Bagnet / Lift Net</option>
-                    </optgroup>
-                    <optgroup label="Pancing / Hook and Line">
-                    <option>Handline (Pangawil)</option>
-                    <option>Longline (Palundag/Pandos)</option>
-                    <option>Trolling Line</option>
-                    </optgroup>
-                    <optgroup label="Bitag / Fish Traps">
-                    <option>Bubo (Fish Trap)</option>
-                    <option>Baklad (Fish Corrals)</option>
-                    <option>Fyke Net</option>
-                    <option>Fish Pot</option>
-                    </optgroup>
-                </select>
+                <input id="netType" list="netTypeList" placeholder="Search or select a net type...">
+                <datalist id="netTypeList">
+                    <option value="Pangangawil (Gill Net)">
+                    <option value="Sapyaw">
+                    <option value="Sigay">
+                    <option value="Liting">
+                    <option value="Sirut">
+                    <option value="Pannariway">
+                    <option value="Lambat Lihit (Fine Mesh Net)">
+                    <option value="Pukot / Beach Seine">
+                    <option value="Sinsoro / Push Net">
+                    <option value="Trawl Net">
+                    <option value="Bagnet / Lift Net">
+                    <option value="Handline (Pangawil)">
+                    <option value="Longline (Palundag/Pandos)">
+                    <option value="Trolling Line">
+                    <option value="Bubo (Fish Trap)">
+                    <option value="Baklad (Fish Corrals)">
+                    <option value="Fyke Net">
+                    <option value="Fish Pot">
+                </datalist>
                 </div>
                 <div>
                 <label class="small"><i class="fa-solid fa-gears"></i> Engine/Gear</label>
                 <input id="gear" placeholder="e.g., 16HP" />
                 </div>
                 <div>
-                <label class="small"><i class="fa-solid fa-ship"></i> Vessel Name</label>
-                <input id="vessel" placeholder="e.g., MB Anna" />
+                <label class="small"><i class="fa-solid fa-ship"></i> Registered Vessel</label>
+                <input id="catch_vessel_name" list="vesselList" placeholder="Search or select a vessel..." oninput="handleVesselSearch()">
+                <datalist id="vesselList"></datalist>
+                <input type="hidden" id="catch_vessel_id">
+                </div>
+                <div style="grid-column:1/-1">
+                <div id="catch_vessel_summary" class="small" style="padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); min-height:40px; display:flex; align-items:center; color:var(--text-muted)">
+                  Select a registered vessel to link this catch.
+                </div>
                 </div>
             </div>
           </div>
@@ -528,8 +533,81 @@
           <div id="catch_msg" class="small" style="margin-top:8px; text-align:center">Waiting for location signal...</div>
         </div>
 
+        <div class="card" id="vessels" style="display:none">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px">
+            <h2 style="margin:0"><i class="fa-solid fa-ship" style="color:var(--primary)"></i> Vessel Information</h2>
+            <button onclick="resetVesselForm()" style="width:auto; padding:10px 16px"><i class="fa-solid fa-plus"></i> New Vessel</button>
+          </div>
+
+          <div class="grid-form" style="margin-bottom:12px">
+            <div>
+              <label class="small"><i class="fa-solid fa-id-card"></i> Vessel Registration Number</label>
+              <input id="vessel_registration_number" placeholder="e.g., VSL-001" />
+            </div>
+            <div>
+              <label class="small"><i class="fa-solid fa-tag"></i> Vessel Name</label>
+              <input id="vessel_name_input" placeholder="e.g., F/B Rocel" />
+            </div>
+            <div>
+              <label class="small"><i class="fa-solid fa-user"></i> Owner's Name</label>
+              <input id="vessel_owner_name" placeholder="e.g., Juan Dela Cruz" />
+            </div>
+            <div>
+              <label class="small"><i class="fa-solid fa-location-dot"></i> Barangay</label>
+              <select id="vessel_barangay">
+                <option value="">Select Barangay</option>
+                <option>Amunitan</option>
+                <option>Batangan</option>
+                <option>Baua</option>
+                <option>Cabanbanan Norte</option>
+                <option>Cabanbanan Sur</option>
+                <option>Cabiraoan</option>
+                <option>Callao</option>
+                <option>Calayan</option>
+                <option>Caroan</option>
+                <option>Casitan</option>
+                <option>Flourishing (Poblacion)</option>
+                <option>Ipil</option>
+                <option>Magrafil</option>
+                <option>Minanga</option>
+                <option>Rebecca (Nagbabacalan)</option>
+                <option>Paradise (Poblacion)</option>
+                <option>Pateng</option>
+                <option>Progressive (Poblacion)</option>
+                <option>San Jose</option>
+                <option>Santa Clara</option>
+                <option>Santa Cruz</option>
+                <option>Santa Maria</option>
+                <option>Smart (Poblacion)</option>
+                <option>Tapel</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:12px; margin-bottom:8px">
+            <button onclick="saveVessel()" style="width:auto; padding:10px 18px"><i class="fa-solid fa-floppy-disk"></i> Save Vessel</button>
+            <button id="vessel_cancel_btn" onclick="resetVesselForm()" style="display:none; width:auto; padding:10px 18px; background:var(--surface); color:var(--text-main); border:1px solid var(--border)"><i class="fa-solid fa-xmark"></i> Cancel Edit</button>
+            <button onclick="loadVessels()" style="width:auto; padding:10px 18px; background:var(--surface); color:var(--primary); border:1px solid var(--primary)"><i class="fa-solid fa-rotate"></i> Refresh</button>
+          </div>
+          <div id="vessel_form_msg" class="small" style="margin-bottom:16px; min-height:18px"></div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap">
+            <h3 style="margin:0; font-size:16px; font-weight:700">Registered Vessels</h3>
+            <div style="display:flex; align-items:center; gap:12px">
+              <div class="small" id="vessel_list_count">0 vessels</div>
+              <div style="position: relative; width: 240px">
+                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
+                <input id="user_vessel_search" placeholder="Search vessels..." oninput="filterUserVessels()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+              </div>
+            </div>
+          </div>
+          <div style="overflow:auto">
+            <table id="user_vessels_table"></table>
+          </div>
+        </div>
+
         <div class="card" id="my_catches" style="display:none">
-          <h2><i class="fa-solid fa-clipboard-list" style="color:var(--primary)"></i> My Catches</h2>
+          <h2><i class="fa-solid fa-clipboard-list" style="color:var(--primary)"></i> Catches</h2>
 
           <div class="card collapsible" style="margin:0; padding:0 20px; border:1px solid var(--border); box-shadow:none; margin-bottom:16px">
             <div class="collapsible-header" onclick="this.parentElement.classList.toggle('open')" style="padding:12px 0">
@@ -659,160 +737,133 @@
           </div>
         </div>
 
-        <div class="card" id="camera" style="display:none">
-          <h2><i class="fa-solid fa-camera" style="color:var(--primary)"></i> Camera</h2>
-          <div id="camera_main">
-            
-            <div style="background:#000; border-radius:16px; overflow:hidden; margin-bottom:20px; position:relative; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow)">
-              <video id="cam_video" playsinline autoplay muted style="width:100%; height:100%; object-fit:cover; position:absolute; inset:0"></video>
-              <canvas id="cam_canvas" style="display:none; width:100%; height:100%; object-fit:cover; position:absolute; inset:0"></canvas>
-              <div style="position:absolute; bottom:16px; left:0; right:0; display:flex; justify-content:center; gap:24px; z-index:10">
-                 <button onclick="startCamera()" style="border-radius:50%; width:56px; height:56px; padding:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.2); backdrop-filter:blur(4px); border:1px solid rgba(255,255,255,0.4)"><i class="fa-solid fa-power-off" style="font-size:20px"></i></button>
-                 <button id="btn_cam_capture" onclick="capturePhoto()" style="border-radius:50%; width:72px; height:72px; padding:0; display:flex; align-items:center; justify-content:center; background:white; color:black; box-shadow:0 4px 12px rgba(0,0,0,0.3)"><i class="fa-solid fa-camera" style="font-size:28px"></i></button>
-                 <button id="btn_cam_retake" onclick="retakePhoto()" style="display:none; border-radius:50%; width:72px; height:72px; padding:0; align-items:center; justify-content:center; background:#ff3b30; color:white; box-shadow:0 4px 12px rgba(0,0,0,0.3)"><i class="fa-solid fa-rotate-left" style="font-size:28px"></i></button>
-              </div>
-            </div>
 
-            <div class="grid-form" style="grid-template-columns: 1fr 1fr; background:transparent; border:none; padding:0; gap:16px">
-              <button id="btn_cam_upload" onclick="uploadCaptured()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-cloud-arrow-up" style="font-size:18px"></i> Upload Captured</button>
-              <button id="btn_cam_attach" onclick="attachCapturedToActivity()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-paperclip" style="font-size:18px"></i> Attach to Activity</button>
-            </div>
-            
-            <div id="cam_msg" class="small" style="margin-top:8px; text-align:center; min-height:20px"></div>
-            <div id="cam_loc_msg" class="small" style="text-align:center; color:var(--text-muted)">Waiting for location signal...</div>
-          </div>
-
-          <div class="card collapsible" id="camera_settings" style="margin-top:24px; padding:0 24px; border:1px solid var(--border); box-shadow:none">
-            <div class="collapsible-header" onclick="toggleCameraSettings()" style="padding:16px 0">
-              <span class="small" style="font-weight:600; font-size:14px"><i class="fa-solid fa-sliders"></i> Camera Settings</span>
-              <span class="chev"><i class="fa-solid fa-chevron-right"></i></span>
-            </div>
-            <div class="collapsible-content">
-              <div class="settings-grid" style="padding-bottom:24px">
-                <div class="field">
-                  <label><i class="fa-solid fa-expand"></i> Resolution</label>
-                  <select id="cam_res">
-                    <option value="default">Default</option>
-                    <option value="640x480">640×480</option>
-                    <option value="1280x720">1280×720</option>
-                    <option value="1920x1080">1920×1080</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label><i class="fa-solid fa-rotate"></i> Rear camera</label>
-                  <select id="cam_rear"><option value="true">Yes</option><option value="false">No</option></select>
-                </div>
-                <div class="field">
-                  <label><i class="fa-solid fa-image"></i> JPEG quality</label>
-                  <div style="display:flex; align-items:center; gap:8px">
-                    <input id="cam_quality" type="range" min="0.5" max="0.95" step="0.05" style="flex:1" />
-                    <span id="cam_quality_val" class="small" style="width:30px">0.9</span>
-                  </div>
-                </div>
-                <div class="field">
-                  <label><i class="fa-solid fa-cloud-arrow-up"></i> Auto upload</label>
-                  <select id="cam_auto_upload"><option value="true">Yes</option><option value="false">No</option></select>
-                </div>
-                <div class="field">
-                  <label><i class="fa-solid fa-download"></i> Save copy</label>
-                  <select id="cam_download"><option value="true">Yes</option><option value="false">No</option></select>
-                </div>
-                <div class="field">
-                  <label><i class="fa-solid fa-lock"></i> Permissions</label>
-                  <div><button onclick="requestCameraPermission()" style="width:auto"><i class="fa-solid fa-key"></i> Request</button></div>
-                </div>
-                <div class="field" style="grid-column:1/-1; display:flex; justify-content:flex-end">
-                   <button onclick="saveCameraSettings()" style="width:auto"><i class="fa-solid fa-check"></i> Save Settings</button>
-                </div>
-                <div id="cam_set_msg" class="small" style="grid-column:1/-1"></div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
     <script>
-      const state = { token: null, user: null, watchId: null, lastPos: null, currentModule: null, refreshTimer: null, myCatchesData: [], myActivityData: [], catchLoc: null, isTracking: false, trackMap: null, trackMarker: null, trackAccuracyCircle: null, trackRoute: null, trackRoutePts: [], trackRouteLastKey: null, status: 'transit', statusAt: null, lastTrackSentAt: 0, lastTrackSentPos: null }
-      ;(() => {
-        const last = readLastLocation()
-        if (!last) return
-        state.lastPos = { lat: last.lat, lng: last.lng }
-        const el = document.getElementById('cur_coords')
-        if (el) el.textContent = `${last.lat.toFixed(6)}, ${last.lng.toFixed(6)}`
-        updateCatchCoords(last.lat, last.lng)
-        updateLocationState(true)
-      })()
-      ;(function(){
-        const qp = new URLSearchParams(location.search); const t = qp.get('token'); if (t) {
-          state.token = t
-          try {
-            const payload = JSON.parse(atob(t.split('.')[1]))
-            setAuth(t, { id: payload.id || null, role: payload.role || 'fisher', email: '' })
-            loadSpecies(); enablePush()
-          } catch {}
+      const state = { 
+        token: localStorage.getItem('fish_token'), 
+        user: JSON.parse(localStorage.getItem('fish_user') || 'null'), 
+        watchId: null, lastPos: null, currentModule: null, refreshTimer: null, 
+        myCatchesData: [], myActivityData: [], catchLoc: null, isTracking: false, 
+        trackMap: null, trackMarker: null, trackAccuracyCircle: null, 
+        trackRoute: null, trackRoutePts: [], trackRouteLastKey: null, 
+        status: 'transit', statusAt: null, lastTrackSentAt: 0, lastTrackSentPos: null,
+        dashboardMap: null, dashboardMarkers: new Map(), catchChart: null,
+        socket: null
+      }
+      
+      // Redirect if not logged in
+      if (!state.token) {
+        location.href = '/login.html';
+      } else {
+        const initUser = () => {
+          setAuth(state.token, state.user);
+          loadSpecies();
+          enablePush();
+        };
+        if (document.readyState === 'loading') {
+          window.addEventListener('DOMContentLoaded', initUser);
+        } else {
+          initUser();
         }
-      })()
+      }
+
       function setAuth(token, user) {
         state.token = token; state.user = user
         document.body.classList.remove('auth-bg')
-        document.getElementById('auth').style.display = 'none'
         document.getElementById('app').style.display = ''
         document.getElementById('logout_btn').style.display = ''
-        showModule('tracking')
+        
+        // Update Navbar User Info
+        if (user) {
+          document.getElementById('user_profile').style.display = 'block';
+          document.getElementById('user_name').textContent = user.name || user.email;
+          document.getElementById('user_role').textContent = user.role || 'Fisher';
+        }
+
+        // Initialize Socket.IO for realtime sync
+        if (window.io) {
+          if (state.socket) state.socket.disconnect();
+          state.socket = io();
+
+          // Listen for events from server
+          state.socket.on('catch', async (data) => {
+            if (!data.item || data.item.userId !== state.user.id) return
+            await refreshRealtimeUserData({ catches: true, dashboard: state.currentModule === 'dashboard' })
+          });
+          state.socket.on('activity', async (data) => {
+            if (!data.item || data.item.user_id !== state.user.id) return
+            await refreshRealtimeUserData({ activity: true, dashboard: state.currentModule === 'dashboard' })
+          });
+          state.socket.on('vessel', async () => {
+            await refreshRealtimeUserData({ catches: true, vessels: true })
+          });
+          state.socket.on('user', async (data) => {
+            if (data.item && state.user && data.item.id === state.user.id) {
+              state.user = { ...state.user, ...data.item }
+              localStorage.setItem('fish_user', JSON.stringify(state.user))
+              document.getElementById('user_name').textContent = state.user.name || state.user.email
+              document.getElementById('user_role').textContent = state.user.role || 'Fisher'
+            }
+          });
+          state.socket.on('protectedZone', async () => {
+            if (state.currentModule === 'tracking' || state.currentModule === 'dashboard') {
+              await refreshRealtimeUserData({ dashboard: true })
+            }
+          });
+          state.socket.on('sync', async (payload) => {
+            if (!payload) return
+            await refreshRealtimeUserData({
+              catches: payload.entity === 'catch' || payload.entity === 'vessel',
+              activity: payload.entity === 'activity',
+              vessels: payload.entity === 'vessel',
+              dashboard: state.currentModule === 'dashboard'
+            })
+          });
+        }
+
+        showModule('dashboard')
         loadMyCatches()
         setupAutoRefreshUser()
         loadMyStatus()
       }
-      async function register() {
-        try {
-          const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: document.getElementById('reg_name').value.trim(), email: document.getElementById('reg_email').value.trim(), password: document.getElementById('reg_pass').value, barangay: document.getElementById('reg_brgy').value }) })
-          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Register failed')
-          setAuth(d.token, d.user)
-          loadSpecies()
-          enablePush()
-        } catch (e) { document.getElementById('auth_msg').textContent = e.message; document.getElementById('auth_msg').className = 'small error' }
+      function clearAuthAndRedirect() {
+          try { if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null } } catch {}
+          try { if (state.socket) { state.socket.disconnect(); state.socket = null } } catch {}
+          if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
+          state.token = null; state.user = null
+          localStorage.removeItem('fish_token');
+          localStorage.removeItem('fish_user');
+          location.href = '/login.html'
       }
-      async function login() {
-        try {
-          const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: document.getElementById('log_email').value.trim(), password: document.getElementById('log_pass').value }) })
-          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Login failed')
-          setAuth(d.token, d.user)
-          loadSpecies()
-          enablePush()
-        } catch (e) { document.getElementById('auth_msg').textContent = e.message; document.getElementById('auth_msg').className = 'small error' }
-      }
-      async function sendSOS() {
-        try {
-          const lp = state.lastPos
-          if (!lp) { document.getElementById('track_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('track_msg').className = 'small error'; return }
-          const r = await fetch('/api/alerts', { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, body: JSON.stringify({ type:'SOS', lat: lp.lat, lng: lp.lng, note: 'SOS' }) })
-          const d = await r.json()
-          if (!r.ok) throw new Error(d.error || 'Failed')
-          document.getElementById('track_msg').textContent = 'SOS sent'
-          document.getElementById('track_msg').className = 'small success'
-        } catch (e) { document.getElementById('track_msg').textContent = e.message; document.getElementById('track_msg').className = 'small error' }
+      async function refreshRealtimeUserData(options = {}) {
+          const { catches = false, activity = false, vessels = false, dashboard = false } = options
+          const tasks = []
+          if (catches || state.currentModule === 'my_catches') tasks.push(loadMyCatches())
+          if (activity || state.currentModule === 'activity') tasks.push(loadMyActivity())
+          if (vessels || state.currentModule === 'vessels' || state.currentModule === 'catch') tasks.push(loadVessels())
+          if (dashboard || state.currentModule === 'dashboard') {
+            tasks.push(Promise.resolve().then(() => refreshDashboard()))
+            tasks.push(Promise.resolve().then(() => updateDashboardMap()))
+          }
+          await Promise.all(tasks)
       }
       function logout(){
-        try {
-          if (state.token && state.watchId != null) {
-            fetch('/api/track/stop', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
-              body: JSON.stringify({ at: new Date().toISOString(), reason: 'logout' }),
-              keepalive: true
-            }).catch(() => {})
-          }
-        } catch {}
-        try { if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null } } catch {}
-        if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
-        state.token = null; state.user = null
-        document.getElementById('app').style.display = 'none'
-        document.getElementById('auth').style.display = ''
-        document.getElementById('logout_btn').style.display = 'none'
-        document.body.classList.add('auth-bg')
-        location.href = '/user'
-      }
+          try {
+            if (state.token && state.watchId != null) {
+              fetch('/api/track/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+                body: JSON.stringify({ at: new Date().toISOString(), reason: 'logout' }),
+                keepalive: true
+              }).catch(() => {})
+            }
+          } catch {}
+          clearAuthAndRedirect()
+        }
+
       function haversineMeters(lat1, lon1, lat2, lon2) {
         const toRad = d => d * Math.PI/180
         const R = 6371000
@@ -888,10 +939,10 @@
       }
       function setStatusUi(status, at) {
         const sel = document.getElementById('status_sel')
-        if (sel && status) sel.value = status
+        if (sel) sel.value = 'transit'
         const when = document.getElementById('status_when')
         if (when) when.textContent = at ? new Date(at).toLocaleString() : '-'
-        const text = status === 'port' ? 'In Port' : (status === 'transit' ? 'In Transit' : 'Unknown')
+        const text = 'Active'
         setTrackMapStatus(text, 'small')
       }
       async function postStatus(status, lat, lng, at) {
@@ -1184,13 +1235,14 @@
         try {
           const speciesSel = document.getElementById('species').value
           if (!speciesSel) { document.getElementById('catch_msg').textContent = 'Please select a species'; document.getElementById('catch_msg').className = 'small error'; return }
+          const vesselId = document.getElementById('catch_vessel_id').value || null
           const payload = {
             species: speciesSel,
             netType: document.getElementById('netType').value || null,
             weightKg: parseFloat(document.getElementById('weight').value) || null,
             lengthCm: parseFloat(document.getElementById('length').value) || null,
             gear: document.getElementById('gear').value || null,
-            vessel: document.getElementById('vessel').value || null,
+            vesselId: vesselId,
             photoUrl: document.getElementById('photoUrl').value || null,
             note: document.getElementById('note').value || null,
             lat: loc.lat, lng: loc.lng
@@ -1207,12 +1259,13 @@
         const fd = new FormData()
         const speciesSel = document.getElementById('species').value
         if (!speciesSel) { document.getElementById('catch_msg').textContent = 'Please select a species'; document.getElementById('catch_msg').className = 'small error'; return }
+        const vesselId = document.getElementById('catch_vessel_id').value || null
         fd.append('species', speciesSel)
         fd.append('netType', document.getElementById('netType').value)
         fd.append('weightKg', document.getElementById('weight').value)
         fd.append('lengthCm', document.getElementById('length').value)
         fd.append('gear', document.getElementById('gear').value)
-        fd.append('vessel', document.getElementById('vessel').value)
+        fd.append('vesselId', vesselId)
         fd.append('note', document.getElementById('note').value)
         const loc = state.catchLoc || state.lastPos; if (loc) { fd.append('lat', loc.lat); fd.append('lng', loc.lng) }
         const file = document.getElementById('photoFile').files[0]
@@ -1493,193 +1546,7 @@
           f.value = ''
         } catch (e) { document.getElementById('act_msg').textContent = e.message; document.getElementById('act_msg').className = 'small error' }
       }
-      async function attachCapturedToActivity() {
-        const lp = state.lastPos
-        if (!lp) { document.getElementById('act_msg').textContent = 'No location yet. Start tracking.'; document.getElementById('act_msg').className = 'small error'; return }
-        if (!camBlob) { document.getElementById('act_msg').textContent = 'Capture a photo first'; document.getElementById('act_msg').className = 'small error'; return }
-        const type = document.getElementById('act_type').value
-        const category = document.getElementById('act_cat').value
-        const note = document.getElementById('act_note').value
-        try {
-          const fd = new FormData()
-          fd.append('type', type)
-          fd.append('category', category)
-          fd.append('note', note)
-          fd.append('lat', lp.lat)
-          fd.append('lng', lp.lng)
-          fd.append('line', JSON.stringify(activityRoute||[]))
-          fd.append('photo', camBlob, 'capture.jpg')
-          const r = await fetch('/api/activity_logs/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd })
-          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
-          document.getElementById('act_msg').textContent = 'Captured photo attached to activity'
-          document.getElementById('act_msg').className = 'small success'
-          camBlob = null
-          activityRoute = []
-          document.getElementById('route_count').textContent = '0'
-          updateRouteMap()
-          loadMyActivity()
-          retakePhoto()
-        } catch (e) { document.getElementById('act_msg').textContent = e.message; document.getElementById('act_msg').className = 'small error' }
-      }
 
-      let camStream = null
-      let camBlob = null
-      function getCamSettings() {
-        try { const s = JSON.parse(localStorage.getItem('cam_settings')||'{}'); return { rear: s.rear!==undefined ? !!s.rear : true, res: s.res||'default', quality: s.quality||0.9, auto_upload: s.auto_upload!==undefined ? !!s.auto_upload : false, download: s.download!==undefined ? !!s.download : false } } catch { return { rear:true, res:'default', quality:0.9, auto_upload:false, download:false } }
-      }
-      function loadCameraSettings() {
-        const s = getCamSettings()
-        document.getElementById('cam_res').value = s.res
-        document.getElementById('cam_rear').value = String(!!s.rear)
-        document.getElementById('cam_quality').value = String(s.quality)
-        document.getElementById('cam_quality_val').textContent = String(s.quality)
-        document.getElementById('cam_auto_upload').value = String(!!s.auto_upload)
-        document.getElementById('cam_download').value = String(!!s.download)
-      }
-      function saveCameraSettings() {
-        const s = {
-          res: document.getElementById('cam_res').value,
-          rear: document.getElementById('cam_rear').value === 'true',
-          quality: parseFloat(document.getElementById('cam_quality').value) || 0.9,
-          auto_upload: document.getElementById('cam_auto_upload').value === 'true',
-          download: document.getElementById('cam_download').value === 'true'
-        }
-        localStorage.setItem('cam_settings', JSON.stringify(s))
-        document.getElementById('cam_set_msg').textContent = 'Saved'
-        document.getElementById('cam_set_msg').className = 'small success'
-      }
-      document.getElementById('cam_quality').addEventListener('input', function(){ document.getElementById('cam_quality_val').textContent = String(this.value) })
-      loadCameraSettings()
-      function toggleCameraSettings(){
-        const card = document.getElementById('camera_settings')
-        card.classList.toggle('open')
-      }
-      async function startCamera() {
-        try {
-          if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            document.getElementById('cam_msg').textContent = 'Camera requires secure context. Use file upload or HTTPS.'
-            document.getElementById('cam_msg').className = 'small error'
-            return
-          }
-          stopCamera()
-          const set = getCamSettings()
-          const constraints = { video: {} }
-          constraints.video.facingMode = { ideal: set.rear ? 'environment' : 'user' }
-          if (set.res && set.res !== 'default') {
-            const parts = set.res.split('x'); const w = parseInt(parts[0],10); const h = parseInt(parts[1],10)
-            if (w && h) { constraints.video.width = { ideal: w }; constraints.video.height = { ideal: h } }
-          }
-          let s = null
-          try { s = await navigator.mediaDevices.getUserMedia(constraints) } catch { s = await navigator.mediaDevices.getUserMedia({ video: true }) }
-          camStream = s
-          const v = document.getElementById('cam_video')
-          v.setAttribute('playsinline','')
-          v.setAttribute('autoplay','')
-          v.setAttribute('muted','')
-          v.muted = true
-          v.playsInline = true
-          v.srcObject = s
-          await v.play()
-          await new Promise(r => { if (v.readyState >= 2) r(); else v.onloadedmetadata = () => r() })
-          document.getElementById('cam_msg').textContent = 'Camera ready'
-          document.getElementById('cam_msg').className = 'small success'
-        } catch (e) {
-          document.getElementById('cam_msg').textContent = 'Camera error'
-          document.getElementById('cam_msg').className = 'small error'
-        }
-      }
-      function stopCamera() {
-        try {
-          if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null }
-          const v = document.getElementById('cam_video'); v.srcObject = null
-        } catch {}
-      }
-      function updateCameraUI(hasPhoto) {
-        document.getElementById('btn_cam_capture').style.display = hasPhoto ? 'none' : 'flex'
-        document.getElementById('btn_cam_retake').style.display = hasPhoto ? 'flex' : 'none'
-        const ids = ['btn_cam_upload', 'btn_cam_attach']
-        ids.forEach(id => { const el = document.getElementById(id); if(el) el.disabled = !hasPhoto })
-        
-        const v = document.getElementById('cam_video')
-        const c = document.getElementById('cam_canvas')
-        if (hasPhoto) {
-           v.style.display = 'none'
-           c.style.display = 'block'
-        } else {
-           v.style.display = 'block'
-           c.style.display = 'none'
-        }
-      }
-      function retakePhoto() {
-        camBlob = null
-        updateCameraUI(false)
-        document.getElementById('cam_msg').textContent = 'Camera ready'
-        document.getElementById('cam_msg').className = 'small success'
-      }
-      function capturePhoto() {
-        try {
-          const set = getCamSettings()
-          const v = document.getElementById('cam_video')
-          const c = document.getElementById('cam_canvas')
-          const w = v.videoWidth || 640
-          const h = v.videoHeight || 480
-          if (!w || !h) { document.getElementById('cam_msg').textContent = 'Camera not ready'; document.getElementById('cam_msg').className = 'small error'; return }
-          c.width = w; c.height = h
-          const ctx = c.getContext('2d')
-          ctx.drawImage(v, 0, 0, w, h)
-          c.style.display = 'block'
-          c.toBlob(b => {
-            camBlob = b
-            document.getElementById('cam_msg').textContent = 'Photo captured'
-            document.getElementById('cam_msg').className = 'small success'
-            if (set.download) {
-              const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'capture.jpg'; a.click()
-            }
-            if (set.auto_upload) { uploadCaptured() }
-          }, 'image/jpeg', set.quality || 0.9)
-        } catch (e) {
-          document.getElementById('cam_msg').textContent = 'Capture failed'
-          document.getElementById('cam_msg').className = 'small error'
-        }
-      }
-      async function uploadCaptured() {
-        try {
-          if (!camBlob) { document.getElementById('cam_msg').textContent = 'No photo'; document.getElementById('cam_msg').className = 'small error'; return }
-          const fd = new FormData()
-          fd.append('species', document.getElementById('species').value)
-          fd.append('weightKg', document.getElementById('weight').value)
-          fd.append('lengthCm', document.getElementById('length').value)
-          fd.append('gear', document.getElementById('gear').value)
-          fd.append('vessel', document.getElementById('vessel').value)
-          fd.append('note', document.getElementById('note').value)
-          const lp = state.lastPos; if (lp) { fd.append('lat', lp.lat); fd.append('lng', lp.lng) }
-          fd.append('photo', camBlob, 'capture.jpg')
-          const r = await fetch('/api/catches/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + state.token }, body: fd })
-          const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
-          document.getElementById('cam_msg').textContent = 'Captured photo uploaded'
-          document.getElementById('cam_msg').className = 'small success'
-          camBlob = null
-          stopCamera()
-          loadMyCatches()
-        } catch (e) {
-          document.getElementById('cam_msg').textContent = e.message
-          document.getElementById('cam_msg').className = 'small error'
-        }
-      }
-      async function requestCameraPermission() {
-        try {
-          const set = getCamSettings()
-          const cons = { video: { facingMode: { ideal: set.rear ? 'environment' : 'user' } } }
-          let s = null
-          try { s = await navigator.mediaDevices.getUserMedia(cons) } catch { s = await navigator.mediaDevices.getUserMedia({ video: true }) }
-          if (s) { s.getTracks().forEach(t => t.stop()) }
-          document.getElementById('cam_set_msg').textContent = 'Permission granted'
-          document.getElementById('cam_set_msg').className = 'small success'
-        } catch (e) {
-          document.getElementById('cam_set_msg').textContent = 'Permission error'
-          document.getElementById('cam_set_msg').className = 'small error'
-        }
-      }
       async function useApproxLocation() {
         try {
           let lat = null, lng = null
@@ -1757,16 +1624,19 @@
         try {
           const r = await fetch('/api/species')
           const d = await r.json()
-          const sel = document.getElementById('species'); 
-          if (!sel) return
-          const current = sel.value
-          sel.innerHTML = '<option value="">Select Types of Species</option>'
-          d.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o) })
-          if (current) sel.value = current
+          const datalist = document.getElementById('speciesList'); 
+          if (!datalist) return
+          const currentInput = document.getElementById('species');
+          const current = currentInput ? currentInput.value : ''
+          datalist.innerHTML = ''
+          d.forEach(s => { const o = document.createElement('option'); o.value = s; datalist.appendChild(o) })
+          if (current && currentInput) currentInput.value = current
         } catch {}
       }
+
+      
       function showModule(id) {
-        const ids = ['tracking','catch','my_catches','activity','camera']
+        const ids = ['dashboard','tracking','vessels','catch','my_catches','activity','reports']
         ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
         state.currentModule = id
         const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
@@ -1774,13 +1644,21 @@
         
         requestAnimationFrame(() => {
           setTimeout(() => {
+            if (id === 'dashboard') {
+              initDashboardMap()
+              refreshDashboard()
+            }
             if (id === 'tracking') {
               try { initTrackMap() } catch {}
               try { if (state.lastPos) updateTrackMapPosition({ lat: state.lastPos.lat, lng: state.lastPos.lng }) } catch {}
               try { setTrackingUi(state.watchId != null) } catch {}
             }
+            if (id === 'vessels') {
+              loadVessels()
+            }
             if (id === 'catch') {
               if (state.lastPos) updateCatchCoords(state.lastPos.lat, state.lastPos.lng)
+              loadVessels()
             }
             
             if (id === 'my_catches') {
@@ -1793,9 +1671,145 @@
           }, 300)
         })
       }
+
+      async function refreshDashboard() {
+        if (!state.token) return
+        try {
+          const r = await fetch('/api/dashboard/stats', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json()
+          if (!r.ok) {
+            if (r.status === 401) {
+              clearAuthAndRedirect()
+              return
+            }
+            throw new Error(d.error)
+          }
+
+          // Update Stats
+          document.getElementById('stat_catch_today').textContent = `${(d.totalWeightToday || 0).toFixed(1)} kg`
+          document.getElementById('stat_active_vessels').textContent = d.activeVessels || 0
+          document.getElementById('stat_activities_week').textContent = d.activitiesWeek || 0
+
+          // Update Top Species
+          const tsList = document.getElementById('top_species_list')
+          tsList.innerHTML = ''
+          if (d.topSpecies && d.topSpecies.length) {
+            d.topSpecies.forEach((s, idx) => {
+              const row = document.createElement('div')
+              row.style = 'display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--border)'
+              if (idx === d.topSpecies.length - 1) row.style.borderBottom = 'none'
+              row.innerHTML = `
+                <div style="font-weight:700; color:var(--primary); width:24px">#${idx+1}</div>
+                <div style="flex:1; font-weight:600">${s.name}</div>
+                <div class="small">${s.count} catches</div>
+              `
+              tsList.appendChild(row)
+            })
+          } else {
+            tsList.innerHTML = '<div class="small" style="text-align:center; padding:20px">No catches logged this month</div>'
+          }
+
+          // Update Chart
+          updateDashboardChart(d.trend)
+
+          // Update Map
+          updateDashboardMap()
+        } catch (e) {
+          console.error('Dashboard refresh error:', e)
+        }
+      }
+
+      function updateDashboardChart(trend) {
+        const ctx = document.getElementById('catchChart')
+        if (!ctx) return
+        
+        const labels = trend.map(t => t.month)
+        const data = trend.map(t => t.weight)
+
+        if (state.catchChart) {
+          state.catchChart.data.labels = labels
+          state.catchChart.data.datasets[0].data = data
+          state.catchChart.update()
+        } else {
+          state.catchChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Catch Weight (kg)',
+                data: data,
+                borderColor: '#007aff',
+                backgroundColor: 'rgba(0,122,255,0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+                x: { grid: { display: false } }
+              }
+            }
+          })
+        }
+      }
+
+      function initDashboardMap() {
+        const el = document.getElementById('dashboard_map')
+        if (!el || state.dashboardMap) return
+        const map = window.L.map(el).setView([18.256, 122.202], 11)
+        window.L.tileLayer('/api/public/tiles/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map)
+        state.dashboardMap = map
+      }
+
+      async function updateDashboardMap() {
+        if (!state.dashboardMap || !state.token) return
+        try {
+          const r = await fetch('/api/live_locations', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json()
+          if (!r.ok) {
+            if (r.status === 401) {
+              clearAuthAndRedirect()
+              return
+            }
+            return
+          }
+
+          // Clear old markers that are no longer active
+          const activeIds = new Set(d.map(p => p.userId))
+          for (const [uid, marker] of state.dashboardMarkers) {
+            if (!activeIds.has(uid)) {
+              marker.remove()
+              state.dashboardMarkers.delete(uid)
+            }
+          }
+
+          // Add/Update markers
+          d.forEach(p => {
+            const pos = [p.lat, p.lng]
+            if (state.dashboardMarkers.has(p.userId)) {
+              state.dashboardMarkers.get(p.userId).setLatLng(pos)
+            } else {
+              const marker = window.L.circleMarker(pos, { 
+                radius: 8, color: p.status === 'port' ? '#ff9500' : '#34c759', 
+                fillColor: p.status === 'port' ? '#ff9500' : '#34c759', 
+                fillOpacity: 0.8, weight: 2 
+              }).addTo(state.dashboardMap)
+              marker.bindPopup(`<b>${p.user ? p.user.name : 'Unknown'}</b><br>Status: ${p.status}`)
+              state.dashboardMarkers.set(p.userId, marker)
+            }
+          })
+        } catch {}
+      }
+
       function refreshDataUser(){
         if (!state.token) return
         const m = state.currentModule
+        if (m === 'dashboard') refreshDashboard()
         if (m === 'my_catches') { try { loadMyCatches() } catch {} }
         if (m === 'catch') { try { loadSpecies() } catch {} }
         if (m === 'activity') { try { loadMyActivity() } catch {} }
@@ -1810,6 +1824,194 @@
         if (open) { sb.classList.add('open'); ov.classList.add('show') } else { sb.classList.remove('open'); ov.classList.remove('show') }
       }
       window.addEventListener('keydown', function(e){ if (e.key === 'Escape') toggleDrawer(false) })
+      let vesselsData = []
+      let editingVesselId = null
+
+      async function loadVessels() {
+        try {
+          const r = await fetch('/api/vessels', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          vesselsData = d
+          renderVessels()
+          updateCatchVesselOptions()
+        } catch (e) {
+          document.getElementById('vessel_form_msg').textContent = e.message
+          document.getElementById('vessel_form_msg').className = 'small error'
+        }
+      }
+
+      function renderVessels(vessels = vesselsData) {
+        const table = document.getElementById('user_vessels_table')
+        const countEl = document.getElementById('vessel_list_count')
+        countEl.textContent = `${vessels.length} vessel${vessels.length !== 1 ? 's' : ''}`
+        
+        if (!vessels.length) {
+          table.innerHTML = '<tr><td style="text-align:center; padding:20px; color:var(--text-muted)">No vessels registered yet</td></tr>'
+          return
+        }
+        
+        table.innerHTML = `
+          <tr>
+            <th>Registration #</th>
+            <th>Vessel Name</th>
+            <th>Owner</th>
+            <th>Barangay</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+          ${vessels.map(v => `
+            <tr>
+              <td>${v.vessel_registration_number}</td>
+              <td>${v.vessel_name}</td>
+              <td>${v.owner_name}</td>
+              <td>${v.barangay || ''}</td>
+              <td>${new Date(v.created_at || v.createdAt).toLocaleDateString()}</td>
+              <td>
+                <button onclick="editVessel('${v.id}')" style="padding:4px 8px; font-size:12px; margin-right:4px">Edit</button>
+                <button onclick="confirmDeleteVessel('${v.id}')" style="padding:4px 8px; font-size:12px; background:var(--error); color:white">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        `
+      }
+
+      function filterUserVessels() {
+        const q = document.getElementById('user_vessel_search').value.toLowerCase().trim()
+        if (!q) {
+          renderVessels()
+          return
+        }
+        const filtered = vesselsData.filter(v => 
+          v.vessel_registration_number.toLowerCase().includes(q) ||
+          v.vessel_name.toLowerCase().includes(q) ||
+          v.owner_name.toLowerCase().includes(q) ||
+          (v.barangay && v.barangay.toLowerCase().includes(q))
+        )
+        renderVessels(filtered)
+      }
+
+      async function saveVessel() {
+        const regNum = document.getElementById('vessel_registration_number').value.trim()
+        const name = document.getElementById('vessel_name_input').value.trim()
+        const owner = document.getElementById('vessel_owner_name').value.trim()
+        const barangay = document.getElementById('vessel_barangay').value.trim()
+        const msgEl = document.getElementById('vessel_form_msg')
+        
+        if (!regNum || !name || !owner || !barangay) {
+          msgEl.textContent = 'All fields are required'
+          msgEl.className = 'small error'
+          return
+        }
+        
+        try {
+          let r
+          if (editingVesselId) {
+            r = await fetch(`/api/vessels/${editingVesselId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+              body: JSON.stringify({ vessel_registration_number: regNum, vessel_name: name, owner_name: owner, barangay })
+            })
+          } else {
+            r = await fetch('/api/vessels', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
+              body: JSON.stringify({ vessel_registration_number: regNum, vessel_name: name, owner_name: owner, barangay })
+            })
+          }
+          
+          if (!r.ok) {
+            const d = await r.json()
+            throw new Error(d.error)
+          }
+          
+          msgEl.textContent = editingVesselId ? 'Vessel updated' : 'Vessel saved'
+          msgEl.className = 'small success'
+          resetVesselForm()
+          loadVessels()
+        } catch (e) {
+          msgEl.textContent = e.message
+          msgEl.className = 'small error'
+        }
+      }
+
+      function editVessel(id) {
+        const vessel = vesselsData.find(v => v.id === id)
+        if (!vessel) return
+        
+        editingVesselId = id
+        document.getElementById('vessel_registration_number').value = vessel.vessel_registration_number
+        document.getElementById('vessel_name_input').value = vessel.vessel_name
+        document.getElementById('vessel_owner_name').value = vessel.owner_name
+        document.getElementById('vessel_barangay').value = vessel.barangay || ''
+        document.getElementById('vessel_cancel_btn').style.display = 'inline-block'
+      }
+
+      function resetVesselForm() {
+        editingVesselId = null
+        document.getElementById('vessel_registration_number').value = ''
+        document.getElementById('vessel_name_input').value = ''
+        document.getElementById('vessel_owner_name').value = ''
+        document.getElementById('vessel_barangay').value = ''
+        document.getElementById('vessel_cancel_btn').style.display = 'none'
+        document.getElementById('vessel_form_msg').textContent = ''
+      }
+
+      async function confirmDeleteVessel(id) {
+        if (!confirm('Are you sure you want to delete this vessel?')) return
+        try {
+          const r = await fetch(`/api/vessels/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + state.token }
+          })
+          if (!r.ok) {
+            const d = await r.json()
+            throw new Error(d.error)
+          }
+          loadVessels()
+        } catch (e) {
+          document.getElementById('vessel_form_msg').textContent = e.message
+          document.getElementById('vessel_form_msg').className = 'small error'
+        }
+      }
+
+      async function updateCatchVesselOptions() {
+        const datalist = document.getElementById('vesselList')
+        if (!datalist) return
+        datalist.innerHTML = ''
+        vesselsData.forEach(v => {
+          const opt = document.createElement('option')
+          opt.value = `${v.vessel_name} (${v.vessel_registration_number})`
+          datalist.appendChild(opt)
+        })
+      }
+
+      function handleVesselSearch() {
+        const vesselNameInput = document.getElementById('catch_vessel_name').value
+        const vesselIdInput = document.getElementById('catch_vessel_id')
+        const summaryEl = document.getElementById('catch_vessel_summary')
+        
+        // Find matching vessel
+        const vessel = vesselsData.find(v => 
+          `${v.vessel_name} (${v.vessel_registration_number})` === vesselNameInput ||
+          v.vessel_name.toLowerCase().includes(vesselNameInput.toLowerCase()) ||
+          v.vessel_registration_number.toLowerCase().includes(vesselNameInput.toLowerCase())
+        )
+        
+        if (vessel) {
+          vesselIdInput.value = vessel.id
+          summaryEl.textContent = `${vessel.vessel_name} - ${vessel.owner_name} (${vessel.vessel_registration_number})`
+        } else {
+          vesselIdInput.value = ''
+          summaryEl.textContent = 'Select a registered vessel to link this catch.'
+        }
+      }
+
+      function updateCatchVesselSummary() {
+        // Keep this for compatibility, but handleVesselSearch now does the work
+        handleVesselSearch()
+      }
+
       function togglePassword(inputId, btnId){
         const i = document.getElementById(inputId)
         const b = document.getElementById(btnId)

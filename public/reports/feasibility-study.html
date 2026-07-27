@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Feasibility Study — Coastal Fisheries Monitoring and Enforcement Information System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.5; color: #111; margin: 32px; }
+    h1, h2 { margin: 0.6em 0 0.3em; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; border-bottom: 2px solid #eee; padding-bottom: 6px; }
+    .title-page { text-align: center; margin-top: 40px; }
+    .section { margin-top: 22px; }
+    .muted { color: #666; }
+    ul { margin: 8px 0 8px 20px; }
+    li { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="title-page">
+    <h1>Feasibility Study</h1>
+    <div class="muted">Course Activity: Information Systems Feasibility Study</div>
+    <div>Project Title: Coastal Fisheries Monitoring and Enforcement Information System</div>
+    <div>Client Organization: Municipal Fisheries Office (LGU)</div>
+    <div>Group: [Insert Group Name] — Members: [Insert Names]</div>
+    <div>Date: [Insert Submission Date]</div>
+  </div>
+
+  <div class="section">
+    <h2>Executive Summary</h2>
+    <p>The Municipal Fisheries Office manages coastal monitoring and enforcement activities using paper forms, ad hoc spreadsheets, and chat groups. These practices make it difficult to track fishing activities, detect protected area violations, and consolidate catch data for decision-making. The proposed Coastal Fisheries Monitoring and Enforcement Information System is a web-based platform enabling fishers to record catches and locations, and enabling administrators and inspectors to monitor tracks, manage protected zones, receive real-time alerts, and analyze activity logs.</p>
+    <p>Based on analysis of the client’s environment and the system prototype implemented with Node.js, Express, and a lightweight JSON datastore, the project is technically feasible for initial deployment, economically reasonable for an academic capstone with minimal infrastructure costs, and operationally feasible given existing roles and processes. A phased timeline of 10–12 weeks is recommended, with a plan to migrate storage to a durable database post-capstone. The overall recommendation is to proceed.</p>
+  </div>
+
+  <div class="section">
+    <h2>Introduction</h2>
+    <p><strong>Background of the Client.</strong> The Municipal Fisheries Office is responsible for coastal resource management, licensing, and enforcement. Staff coordinate with barangay officials and fishers to monitor activities, document catches, and ensure compliance with protected area rules.</p>
+    <p><strong>Current System or Process.</strong> Data collection relies on manual logs, spreadsheets, and messaging apps. Location tracking and zone enforcement are reactive, with limited geospatial analysis and delayed reporting.</p>
+    <p><strong>Problem Statement.</strong> The office needs a unified system to capture geolocated catches, track vessel movement, detect protected area violations, and streamline reporting. Manual processes lead to inconsistent data quality, slow consolidation, and limited visibility.</p>
+    <p><strong>Objectives of the Feasibility Study.</strong> Determine the technical, economic, operational, and schedule feasibility of implementing a web-based monitoring and enforcement system aligned with capstone requirements.</p>
+  </div>
+
+  <div class="section">
+    <h2>Project Description (Proposed Information System)</h2>
+    <p><strong>Proposed System Overview.</strong> A web-based platform with role-based access (admin, inspector, fisher, researcher). Core features include user registration and authentication, geolocated catch submission, GPS track logging, protected zone management (GeoJSON), automated alerts on zone approach/violation, push notifications (VAPID), data export (GeoJSON/CSV), and activity logging.</p>
+    <p><strong>Scope and Limitations.</strong> Scope covers catch and track recording, protected zone management, alerts, user management, and public exports. Out of scope for the capstone are payments, licensing workflows, and long-term archival. Initial storage uses JSON files suitable for prototype; production should migrate to a durable database.</p>
+    <p><strong>Target Users.</strong> Fishers (data entry for catches and optional tracks), inspectors (live monitoring and alerts), administrators (user/zone management, analytics), and researchers (read-only data exports).</p>
+  </div>
+
+  <div class="section">
+    <h2>Feasibility Analysis</h2>
+    <p><strong>Technical Feasibility.</strong></p>
+    <ul>
+      <li>Technology stack: Node.js, Express, JSON storage (Lowdb), web-push, Mapbox integration, file uploads with EXIF GPS parsing, Turf.js for geospatial checks.</li>
+      <li>Deployment options: Local LGU server or serverless hosting. Static assets are served from the built-in web server; APIs expose JSON and streaming endpoints.</li>
+      <li>Capabilities: Role-based JWT auth, file uploads, geospatial analysis, push notifications, CSV/GeoJSON export, SSE for live monitoring.</li>
+      <li>Risks: GPS accuracy, intermittent connectivity, ephemeral storage on serverless platforms, and potential scaling limits of JSON storage. Mitigation: migrate to PostgreSQL or MongoDB, add offline caching, and enforce input validation.</li>
+    </ul>
+    <p><strong>Economic Feasibility.</strong></p>
+    <ul>
+      <li>Estimated costs: hosting (entry-tier), domain, SSL (often bundled), minimal hardware for local deployments, training time.</li>
+      <li>Benefits: faster data consolidation, improved enforcement, reduced manual errors, near real-time alerts, and better reporting for policy decisions.</li>
+      <li>Conclusion: For a capstone and pilot, costs are low and benefits significant, supporting a positive cost-benefit outlook.</li>
+    </ul>
+    <p><strong>Operational Feasibility.</strong></p>
+    <ul>
+      <li>Readiness: Existing roles fit the system design; staff can adopt dashboards with brief training.</li>
+      <li>User acceptance: Interfaces for fishers and admins are simple; data exports integrate with existing reporting.</li>
+      <li>Change management: Provide onboarding sessions, quick guides, and feedback loops to refine workflows.</li>
+    </ul>
+    <p><strong>Schedule Feasibility.</strong></p>
+    <ul>
+      <li>Weeks 1–2: Requirements finalization and data gathering.</li>
+      <li>Weeks 3–5: Core API and data model implementation; auth and uploads.</li>
+      <li>Weeks 6–7: Geospatial features, zones, alerts, push notifications.</li>
+      <li>Weeks 8–9: Admin dashboards, exports, activity logging, QA.</li>
+      <li>Weeks 10–12: Pilot, user training, documentation, final adjustments.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>Conclusion and Recommendation</h2>
+    <p>The proposed system is feasible within the capstone timeframe and resources. It addresses key pain points in monitoring and enforcement, introduces geospatial awareness, and delivers practical reporting. Proceed with phased deployment, plan for database migration post-capstone, and codify operational policies for sustainable use.</p>
+  </div>
+</body>
+</html>

@@ -16,29 +16,27 @@
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/config.js"></script>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root {
-        --primary: #007aff;
-        --primary-hover: #0056b3;
-        --surface: #ffffff;
-        --background: #f5f5f7;
-        --text-main: #1d1d1f;
-        --text-muted: #86868b;
-        --border: #d2d2d7;
-        --success: #34c759;
-        --error: #ff3b30;
+        --primary: #0077B6; /* Ocean Blue */
+        --primary-hover: #0096C7;
+        --surface: #ffffff; /* White cards */
+        --background: #EAF7FF; /* Main Background */
+        --text-main: #023047; /* Headings */
+        --text-muted: #4F5D75; /* Secondary Text */
+        --border: #D6EAF8; /* Borders */
+        --success: #06D6A0;
+        --warning: #FFB703;
+        --error: #EF476F;
+        --sidebar-bg: #0F4C81; /* Deep Ocean Blue */
+        --sidebar-active: #00B4D8; /* Bright Aqua Blue */
+        --sidebar-hover: #48CAE4;
         --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
-        --shadow: 0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.1);
-        --radius: 16px;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --surface: #1c1c1e;
-          --background: #000000;
-          --text-main: #f5f5f7;
-          --text-muted: #86868b;
-          --border: #424245;
-        }
+        --shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        --radius: 20px; /* More rounded corners */
       }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -122,7 +120,7 @@
       th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border); }
       th { background: rgba(0,0,0,0.02); font-weight: 800; color: var(--primary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
       tr:last-child td { border-bottom: none; }
-      tr:hover td { background: rgba(0,0,0,0.01); }
+      tr:hover td { background: #F3F8FF; }
       td button { padding: 6px 12px; font-size: 12px; margin: 2px; height: auto; border-radius: 8px; width: auto; box-shadow: none; border: 1px solid rgba(0,0,0,0.1); }
       
       .card {
@@ -148,7 +146,7 @@
       
       #sidebar { position: sticky; top: 90px; }
       #sidebar .group {
-        background: var(--surface);
+        background: var(--sidebar-bg); /* Deep Ocean Blue */
         border: 1px solid var(--border);
         border-radius: var(--radius);
         padding: 16px;
@@ -167,14 +165,15 @@
         margin: 0;
         border-radius: 12px;
         background: transparent;
-        color: var(--text-muted);
+        color: rgba(255,255,255,0.8); /* Light white text */
         box-shadow: none;
         font-weight: 500;
-        border: 1px solid transparent;
+        border: none;
+        transition: all 0.2s;
         height: auto;
       }
-      #sidebar button:hover { background: rgba(0,0,0,0.03); color: var(--primary); }
-      #sidebar button.active { background: rgba(0, 122, 255, 0.08); color: var(--primary); font-weight: 600; border-color: rgba(0, 122, 255, 0.1); }
+      #sidebar button:hover { background: var(--sidebar-hover); color: white; }
+      #sidebar button.active { background: var(--sidebar-active); color: white; font-weight: 600; box-shadow: 0 4px 12px rgba(0,180,216,0.4); }
       #sidebar button .icon { font-size: 18px; width: 24px; text-align: center; }
       
       .collapsible.open .collapsible-content { display: block !important; }
@@ -204,7 +203,7 @@
       
       #drawer_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; z-index: 999; backdrop-filter: blur(2px); }
       @media (max-width: 900px) {
-        #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-105%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow); margin: 0; padding: 0; background: var(--surface); border-right: 1px solid var(--border); z-index: 1000; width: 280px; }
+        #sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-105%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: var(--shadow); margin: 0; padding: 0; background: var(--sidebar-bg); border-right: 1px solid var(--border); z-index: 1000; width: 280px; }
         #sidebar .group { border: none; box-shadow: none; border-radius: 0; height: 100%; padding: 24px 16px; }
         #sidebar.open { transform: translateX(0); }
         #drawer_overlay.show { display: block; }
@@ -215,8 +214,8 @@
       .passwrap .toggle-eye { position: absolute !important; right: 8px !important; top: 50% !important; transform: translateY(-50%) !important; background: transparent !important; color: var(--text-muted) !important; border: none !important; padding: 4px !important; height: 32px !important; width: 32px !important; box-shadow: none !important; margin: 0 !important; min-width: unset !important; z-index: 10 !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 16px !important; border-radius: 8px !important; cursor: pointer !important; }
       .passwrap .toggle-eye:hover { color: var(--text-main) !important; background: rgba(0,0,0,0.05) !important; transform: translateY(-50%) !important; box-shadow: none !important; }
       
-      #sos_overlay, #confirm_overlay, #history_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-      #sos_popup, #confirm_popup, #history_popup {
+      #confirm_overlay, #history_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+      #confirm_popup, #history_popup {
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: var(--radius);
@@ -226,8 +225,6 @@
         padding: 32px;
         animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       }
-      #sos_popup h3 { margin-top: 0; font-size: 22px; font-weight: 700; color: var(--error); display: flex; align-items: center; gap: 12px; }
-      #sos_popup .meta { font-size: 14px; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
       
       .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; padding: 24px; background: var(--background); border-radius: 16px; border: 1px solid var(--border); }
       .grid-form input, .grid-form select, .grid-form button { margin: 0; width: 100%; }
@@ -242,34 +239,22 @@
     </style>
   </head>
   <body class="auth-bg">
-    <div class="topbar"><img src="/logo.svg" alt="FishMonitor"/><span class="title">Admin Dashboard</span><button id="logout_btn" class="logout_btn" style="display:none" onclick="logoutAdmin()">Logout</button></div>
-    <div id="sos_overlay"><div id="sos_popup"></div></div>
-    <div id="confirm_overlay"><div id="confirm_popup"></div></div>
-    <div id="history_overlay"><div id="history_popup"></div></div>
-    <div class="card" id="login_card">
-      <div style="text-align:center; margin-bottom:24px">
-        <img src="/logo.svg" alt="Logo" style="width:64px; height:64px; margin-bottom:16px" />
-        <h1 style="font-size:24px; font-weight:800; margin:0; color:var(--text-main)">Fish Monitor</h1>
-        <p class="small" style="margin-top:8px">Admin Access</p>
+    <div class="topbar">
+      <div style="display:flex; align-items:center; gap:12px">
+        <img src="/logo.svg" alt="FishMonitor"/>
+        <span class="title" style="font-size:16px; white-space:nowrap">BFAR Monitoring</span>
       </div>
-      
-      <div style="text-align:left; margin-bottom:16px">
-        <label class="small" style="font-weight:600; margin-bottom:4px; display:block">Email Address</label>
-        <input id="email" placeholder="admin@example.com" />
-      </div>
-
-      <div style="text-align:left; margin-bottom:24px">
-        <label class="small" style="font-weight:600; margin-bottom:4px; display:block">Password</label>
-        <div class="passwrap">
-          <input id="pass" type="password" placeholder="Password" />
-          <button id="admin_pass_toggle" class="toggle-eye" onclick="togglePassword('pass','admin_pass_toggle')">🔒</button>
+      <div id="user_info" style="margin-left:auto; display:flex; align-items:center; gap:16px">
+        <div style="text-align:right; display:none" id="user_profile">
+          <div id="user_name" style="font-weight:600; font-size:14px"></div>
+          <div id="user_role" style="font-size:11px; text-transform:uppercase; color:var(--text-muted)"></div>
         </div>
+        <button id="logout_btn" class="logout_btn" style="display:none" onclick="logoutAdmin()">Logout</button>
       </div>
-
-      <button onclick="loginAdmin()">Login</button>
-      <div id="msg" class="small" style="margin-top:16px; min-height:20px"></div>
     </div>
 
+    <div id="confirm_overlay"><div id="confirm_popup"></div></div>
+    <div id="history_overlay"><div id="history_popup"></div></div>
     <div class="layout" id="admin_app" style="display:none">
       <div id="drawer_overlay" onclick="toggleDrawer(false)"></div>
       <div id="sidebar" role="navigation" aria-label="Admin menu">
@@ -283,6 +268,7 @@
           <button data-module="mod_alerts" onclick="showAdminModule('mod_alerts')"><i class="fa-solid fa-bell icon"></i> Alerts</button>
           <button data-module="mod_exports" onclick="showAdminModule('mod_exports')"><i class="fa-solid fa-file-export icon"></i> Exports</button>
           <button data-module="mod_live" onclick="showAdminModule('mod_live')"><i class="fa-solid fa-satellite-dish icon"></i> Live</button>
+          <button data-module="mod_vessels" onclick="showAdminModule('mod_vessels')"><i class="fa-solid fa-ship icon"></i> Vessels</button>
           <button data-module="mod_activity" onclick="showAdminModule('mod_activity')"><i class="fa-solid fa-water icon"></i> Activity</button>
         </div>
       </div>
@@ -309,7 +295,7 @@
              <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Registered Users</h3>
              <div style="position: relative; width: 320px;">
                 <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
-                <input id="userSearch" placeholder="Search by name, email or role..." oninput="filterUsers()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+                <input id="userSearch" placeholder="Search by user, email or role..." oninput="filterUsers()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
              </div>
           </div>
 
@@ -416,6 +402,17 @@
           </div>
         </div>
 
+        <div class="card" id="mod_vessels" style="display:none">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px;">
+            <h2 style="margin:0"><i class="fa-solid fa-ship" style="color:var(--primary)"></i> Vessels</h2>
+            <div style="position: relative; width: 320px;">
+              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
+              <input id="vesselSearch" placeholder="Search by registration #, name, or owner..." oninput="filterVessels()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+            </div>
+          </div>
+          <table id="vesselsTable"></table>
+        </div>
+
         <div class="card" id="mod_live" style="display:none">
           <h2><i class="fa-solid fa-satellite-dish" style="color:var(--primary)"></i> Live Tracking</h2>
           <div class="grid-form">
@@ -447,20 +444,34 @@
     </div>
 
     <script>
-      const state = { token: null, species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, sosCurrent: null, mapPollTimer: null, liveEvents: [], statusByUserId: new Map() }
-      ;(function(){
-        const qp = new URLSearchParams(location.search); const t = qp.get('token'); if (t) {
-          state.token = t
+      const state = { token: localStorage.getItem('fish_token'), user: JSON.parse(localStorage.getItem('fish_user') || 'null'), species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, mapPollTimer: null, liveEvents: [], statusByUserId: new Map() }
+      
+      // Redirect if not logged in or not admin
+      if (!state.token || (state.user && state.user.role !== 'admin')) {
+        location.href = '/login.html';
+      } else {
+        const initAdmin = () => {
           document.body.classList.remove('auth-bg')
-          document.getElementById('login_card').style.display='none'
-          document.getElementById('admin_app').style.display=''
-          document.getElementById('msg').textContent=''
-          document.getElementById('logout_btn').style.display=''
+          document.getElementById('admin_app').style.display = ''
+          document.getElementById('logout_btn').style.display = ''
+          
+          // Update Navbar User Info
+          if (state.user) {
+            document.getElementById('user_profile').style.display = 'block';
+            document.getElementById('user_name').textContent = state.user.name || state.user.email;
+            document.getElementById('user_role').textContent = state.user.role || 'Admin';
+          }
+
           showAdminModule('mod_users')
           loadData()
           setupAutoRefreshAdmin()
+        };
+        if (document.readyState === 'loading') {
+          window.addEventListener('DOMContentLoaded', initAdmin);
+        } else {
+          initAdmin();
         }
-      })()
+      }
       async function loginAdmin() {
         try {
           const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: document.getElementById('email').value.trim(), password: document.getElementById('pass').value }) })
@@ -483,9 +494,12 @@
         if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
         stopUserMapPolling()
         try { if (window._liveES) { window._liveES.close(); window._liveES = null } } catch {}
-        document.getElementById('logout_btn').style.display = 'none'
-        document.getElementById('admin_app').style.display = 'none'
-        document.getElementById('login_card').style.display = ''
+        const logoutBtn = document.getElementById('logout_btn')
+        if (logoutBtn) logoutBtn.style.display = 'none'
+        const adminApp = document.getElementById('admin_app')
+        if (adminApp) adminApp.style.display = 'none'
+        const loginCard = document.getElementById('login_card')
+        if (loginCard) loginCard.style.display = ''
         document.body.classList.add('auth-bg')
         location.href = '/admin'
       }
@@ -502,12 +516,13 @@
         }
       }
       function showAdminModule(id) {
-        const ids = ['mod_users','mod_catches','mod_tracks','mod_map','mod_species','mod_zones','mod_alerts','mod_exports','mod_live','mod_activity']
+        const ids = ['mod_users','mod_catches','mod_tracks','mod_map','mod_species','mod_zones','mod_alerts','mod_exports','mod_vessels','mod_live','mod_activity']
         ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
         const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
         state.currentModule = id
         if (id === 'mod_map') { setTimeout(initUserMap, 50); startUserMapPolling() } else { stopUserMapPolling() }
         if (id === 'mod_zones') { setTimeout(initZoneMap, 50) }
+        if (id === 'mod_vessels') { loadVesselsAdmin() }
         if (window.matchMedia('(max-width: 900px)').matches) toggleDrawer(false)
       }
       function startUserMapPolling() {
@@ -529,6 +544,7 @@
         try { loadData() } catch {}
         const m = state.currentModule
         if (m === 'mod_activity') { try { loadActivity() } catch {} }
+        if (m === 'mod_vessels') { try { loadVesselsAdmin() } catch {} }
       }
       function setupAutoRefreshAdmin(){
         if (state.refreshTimer) clearInterval(state.refreshTimer)
@@ -552,6 +568,7 @@
         const sr = await fetch('/api/admin/species', { headers }); const species = await sr.json(); state.species = species
         const zr = await fetch('/api/admin/protected_areas', { headers }); const zones = await zr.json(); state.zones = zones
         const ar = await fetch('/api/admin/alerts', { headers }); const alerts = await ar.json(); state.alerts = alerts
+        const vr = await fetch('/api/vessels', { headers }); state.vessels = await vr.json()
         
         filterUsers()
         filterCatches()
@@ -573,18 +590,68 @@
           if (a.type === 'Status: Active') typeStyle = 'background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
           else if (a.type === 'Status: In Port') typeStyle = 'background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
           else if (a.type === 'Status: In Transit') typeStyle = 'background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
-          else if (a.type === 'SOS') typeStyle = 'background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
           
           const typeDisplay = typeStyle ? `<span style="${typeStyle}">${a.type}</span>` : a.type
           
           at.innerHTML += `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</td><td>${new Date(a.recordedAt).toLocaleString()}</td><td>${actions}</td></tr>`
         })
-        try {
-          const pendingSos = (alerts||[]).filter(a => a.type==='SOS' && String(a.status||'').toLowerCase()==='pending')
-          if (pendingSos.length && !state.sosCurrent) showSosPopup(pendingSos[0])
-        } catch {}
         loadActivity()
-        ensureLive()
+          ensureLive()
+        }
+
+      let adminVesselsData = []
+
+      async function loadVesselsAdmin() {
+        try {
+          const r = await fetch('/api/vessels', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          adminVesselsData = d
+          renderVesselsAdmin()
+        } catch (e) { console.error(e) }
+      }
+
+      function renderVesselsAdmin(vessels = adminVesselsData) {
+        const table = document.getElementById('vesselsTable')
+        if (!vessels.length) {
+          table.innerHTML = '<tr><td style="text-align:center; padding:20px; color:var(--text-muted)">No vessels registered yet</td></tr>'
+          return
+        }
+        table.innerHTML = `
+          <tr>
+            <th>Registration #</th>
+            <th>Vessel Name</th>
+            <th>Owner</th>
+            <th>Barangay</th>
+            <th>Created</th>
+            <th>Updated</th>
+          </tr>
+          ${vessels.map(v => `
+            <tr>
+              <td>${v.vessel_registration_number}</td>
+              <td>${v.vessel_name}</td>
+              <td>${v.owner_name}</td>
+              <td>${v.barangay || ''}</td>
+              <td>${new Date(v.created_at || v.createdAt).toLocaleString()}</td>
+              <td>${new Date(v.updated_at || v.updatedAt).toLocaleString()}</td>
+            </tr>
+          `).join('')}
+        `
+      }
+
+      function filterVessels() {
+        const q = document.getElementById('vesselSearch').value.toLowerCase().trim()
+        if (!q) {
+          renderVesselsAdmin()
+          return
+        }
+        const filtered = adminVesselsData.filter(v => 
+          v.vessel_registration_number.toLowerCase().includes(q) ||
+          v.vessel_name.toLowerCase().includes(q) ||
+          v.owner_name.toLowerCase().includes(q) ||
+          (v.barangay && v.barangay.toLowerCase().includes(q))
+        )
+        renderVesselsAdmin(filtered)
       }
 
       async function addSpecies() {
@@ -618,13 +685,13 @@
       function renderUsers(users) {
         const ut = document.getElementById('users')
         if (!ut) return
-        ut.innerHTML = '<tr><th>Name</th><th>Email</th><th>Barangay</th><th>Role</th><th>Created</th><th>Action</th></tr>'
+        ut.innerHTML = '<tr><th>User Name</th><th>Email</th><th>Role</th><th>Created</th><th>Action</th></tr>'
         if (!users || users.length === 0) {
-          ut.innerHTML += '<tr><td colspan="6" style="text-align:center; padding: 24px; color: var(--text-muted);">No users found.</td></tr>'
+          ut.innerHTML += '<tr><td colspan="5" style="text-align:center; padding: 24px; color: var(--text-muted);">No users found.</td></tr>'
           return
         }
         users.forEach(u => {
-          ut.innerHTML += `<tr><td>${u.name}</td><td>${u.email}</td><td>${u.barangay||''}</td><td><select onchange="changeRole('${u.id}', this.value)"><option ${u.role==='admin'?'selected':''}>admin</option><option ${u.role==='inspector'?'selected':''}>inspector</option><option ${u.role==='fisher'?'selected':''}>fisher</option><option ${u.role==='researcher'?'selected':''}>researcher</option></select></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${u.role==='admin'?'<span class="small">protected</span>':`<button onclick="deleteUser('${u.id}')">Delete</button>`}</td></tr>`
+          ut.innerHTML += `<tr><td>${u.name || ''}</td><td>${u.email}</td><td><select onchange="changeRole('${u.id}', this.value)"><option ${u.role==='admin'?'selected':''}>admin</option><option ${u.role==='inspector'?'selected':''}>inspector</option><option ${u.role==='fisher'?'selected':''}>fisher</option><option ${u.role==='researcher'?'selected':''}>researcher</option></select></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${u.role==='admin'?'<span class="small">protected</span>':`<button onclick="deleteUser('${u.id}')">Delete</button>`}</td></tr>`
         })
       }
 
@@ -637,7 +704,6 @@
         const filtered = (state.users || []).filter(u => 
           (u.name || '').toLowerCase().includes(q) || 
           (u.email || '').toLowerCase().includes(q) || 
-          (u.barangay || '').toLowerCase().includes(q) ||
           (u.role || '').toLowerCase().includes(q)
         )
         renderUsers(filtered)
@@ -646,9 +712,9 @@
       function renderCatches(catches) {
         const ct = document.getElementById('catches')
         if (!ct) return
-        ct.innerHTML = '<tr><th>User</th><th>Photo</th><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
+        ct.innerHTML = '<tr><th>Owner Name</th><th>Barangay</th><th>Photo</th><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
         if (!catches || catches.length === 0) {
-          ct.innerHTML += '<tr><td colspan="10" style="text-align:center; padding: 24px; color: var(--text-muted);">No catches found.</td></tr>'
+          ct.innerHTML += '<tr><td colspan="11" style="text-align:center; padding: 24px; color: var(--text-muted);">No catches found.</td></tr>'
           return
         }
         const imgsByCatch = state.imgsByCatch || {}
@@ -656,7 +722,7 @@
           const img = (imgsByCatch[c.id] && imgsByCatch[c.id][0]) ? imgsByCatch[c.id][0] : null
           const thumb = img ? `<a target="_blank" href="${img.bucket_key}"><img src="${img.bucket_key}" style="height:40px;border-radius:4px"/></a>` : ''
           const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
-          ct.innerHTML += `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="ng">${netGear}</td><td class="vs">${c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+          ct.innerHTML += `<tr data-id="${c.id}"><td>${c.ownerName || ''}</td><td>${c.barangay || ''}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="ng">${netGear}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
         })
       }
 
@@ -668,8 +734,9 @@
         }
         const filtered = (state.catches || []).filter(c => 
           (c.species || '').toLowerCase().includes(q) || 
-          (c.user ? c.user.name : '').toLowerCase().includes(q) || 
-          (c.vessel || '').toLowerCase().includes(q) ||
+          (c.ownerName || '').toLowerCase().includes(q) || 
+          (c.barangay || '').toLowerCase().includes(q) || 
+          (c.vesselName || c.vessel || '').toLowerCase().includes(q) ||
           (c.netType || '').toLowerCase().includes(q) ||
           (c.gear || '').toLowerCase().includes(q) ||
           (c.note || '').toLowerCase().includes(q)
@@ -1028,24 +1095,26 @@
             if (!np) return
             np.user = p.user || null
             seenUserIds.add(np.userId)
-            if (np.active !== false) activeUserIds.add(np.userId)
-            state.latestLocations.set(np.userId, np)
-            upsertUserMarker(np)
+            const isActive = np.active !== false
+            if (isActive) {
+              activeUserIds.add(np.userId)
+              state.latestLocations.set(np.userId, np)
+              upsertUserMarker(np)
+            }
           })
+          // Remove markers that are no longer active, or not in seen list
           Array.from(state.latestLocations.keys()).forEach(uid => {
-            if (!seenUserIds.has(uid)) {
+            if (!activeUserIds.has(uid)) {
               removeUserMarker(uid)
             }
           })
           const vals = state.latestLocations ? Array.from(state.latestLocations.values()) : []
-          let inTransit = 0, inPort = 0, unknown = 0
+          let activeCount = 0
           vals.forEach(x => {
             if (!x) return
-            if (x.status === 'transit') inTransit++
-            else if (x.status === 'port') inPort++
-            else unknown++
+            if (x.active !== false) activeCount++
           })
-          setUserMapStatus(`${inTransit} in transit · ${inPort} in port${unknown ? (' · ' + unknown + ' unknown') : ''}`)
+          setUserMapStatus(`${activeCount} active`)
           if (forceFit) fitUserMap()
           else maybeAutoFitUserMap()
         } catch (e) {
@@ -1067,25 +1136,18 @@
         routeLastKeyByUserId.delete(userId)
       }
       function markUserInactive(userId) {
-        if (!userId) return
-        if (!state.latestLocations) state.latestLocations = new Map()
-        const cur = state.latestLocations.get(userId)
-        if (cur) {
-          upsertUserMarker({ ...cur, active: false })
-          return
-        }
-        if (!state.userMap) return
-        const { markersByUserId, circlesByUserId } = state.userMap
-        const marker = markersByUserId.get(userId)
-        if (marker && marker.setStyle) {
-          try { marker.setStyle({ color: '#86868b', fillColor: '#86868b', opacity: 0.9, fillOpacity: 0.6 }) } catch {}
-        }
-        const circle = circlesByUserId.get(userId)
-        if (circle) { try { circle.remove() } catch {} circlesByUserId.delete(userId) }
+        removeUserMarker(userId)
       }
       function upsertUserMarker(p) {
         if (!p) return
         const isActive = p.active !== false
+        
+        // Skip if not active (remove marker if exists)
+        if (!isActive) {
+          removeUserMarker(p.userId)
+          return
+        }
+        
         if (!state.latestLocations) state.latestLocations = new Map()
         state.latestLocations.set(p.userId, p)
 
@@ -1095,25 +1157,64 @@
         const when = p.recordedAt ? new Date(p.recordedAt) : null
         const subtitle = when ? when.toLocaleString() : ''
 
-        const statusText = p.status === 'port' ? 'In Port' : (p.status === 'transit' ? 'In Transit' : 'Unknown')
+        const statusText = 'Active'
         const statusAt = p.statusAt ? new Date(p.statusAt) : null
         const statusLine = statusAt ? `${statusText} • ${statusAt.toLocaleString()}` : statusText
-        const markerColor = p.status === 'port' ? '#ff9500' : (p.status === 'transit' ? '#007aff' : (isActive ? '#007aff' : '#86868b'))
+        // Green for active
+        const markerColor = '#34c759'
         const markerOpacity = 1
-        const fillOpacity = p.status === 'port' ? 0.85 : (p.status === 'transit' ? 0.9 : (isActive ? 0.9 : 0.6))
+        const fillOpacity = 0.9
 
         let marker = markersByUserId.get(p.userId)
         if (!marker) {
-          marker = window.L.circleMarker([p.lat, p.lng], { radius: isActive ? 7 : 6, color: markerColor, weight: 2, opacity: markerOpacity, fillColor: markerColor, fillOpacity })
+          marker = window.L.circleMarker([p.lat, p.lng], { radius: 7, color: markerColor, weight: 2, opacity: markerOpacity, fillColor: markerColor, fillOpacity })
           marker.addTo(map)
           markersByUserId.set(p.userId, marker)
         } else {
           marker.setLatLng([p.lat, p.lng])
           if (marker.setStyle) {
-            try { marker.setStyle({ color: markerColor, fillColor: markerColor, opacity: markerOpacity, fillOpacity }) } catch {}
+            try { marker.setStyle({ color: markerColor, fillColor: markerColor, opacity: markerOpacity, fillOpacity, radius: 7 }) } catch {}
           }
         }
-        marker.bindPopup(`<b>${label}</b><div class="small">${subtitle}</div><div class="small">${statusLine}</div><div class="small">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div><div style="margin-top:8px"><button onclick="openUserHistory('${p.userId}')" style="width:auto;height:auto;padding:6px 10px">History</button></div>`)
+        
+        // Get vessel info from state or from the point payload
+        const userVessels = state.vessels || []
+        let vesselInfo = null
+        if (p.vesselId) {
+          vesselInfo = userVessels.find(v => v.id === p.vesselId)
+        }
+        if (!vesselInfo && p.vesselRegistrationNumber) {
+          vesselInfo = userVessels.find(v => v.vessel_registration_number === p.vesselRegistrationNumber)
+        }
+        
+        // Build popup content
+        let popupContent = `<div style="font-size:14px; font-weight:bold; margin-bottom:4px">Inspector Details</div>`
+        if (p.user) {
+          if (p.user.name) popupContent += `<div style="font-size:13px"><b>Name:</b> ${p.user.name}</div>`
+          if (p.user.email) popupContent += `<div style="font-size:13px"><b>Email:</b> ${p.user.email}</div>`
+          if (p.user.role) popupContent += `<div style="font-size:13px"><b>Role:</b> ${p.user.role}</div>`
+          if (p.user.barangay) popupContent += `<div style="font-size:13px"><b>Inspector Barangay:</b> ${p.user.barangay}</div>`
+        }
+        popupContent += `<div style="margin-top:8px; font-size:14px; font-weight:bold">Tracking Details</div>`
+        popupContent += `<div style="font-size:13px"><b>Status:</b> ${statusLine}</div>`
+        popupContent += `<div style="font-size:13px"><b>Time:</b> ${subtitle}</div>`
+        popupContent += `<div style="font-size:13px"><b>Location:</b> ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>`
+        if (vesselInfo) {
+          popupContent += `<div style="margin-top:8px; font-size:14px; font-weight:bold">Vessel Details</div>`
+          if (vesselInfo.vessel_name) popupContent += `<div style="font-size:13px"><b>Vessel:</b> ${vesselInfo.vessel_name}</div>`
+          if (vesselInfo.owner_name) popupContent += `<div style="font-size:13px"><b>Owner:</b> ${vesselInfo.owner_name}</div>`
+          if (vesselInfo.barangay) popupContent += `<div style="font-size:13px"><b>Barangay:</b> ${vesselInfo.barangay}</div>`
+        } else if (p.vesselName || p.ownerName || p.barangay) {
+          popupContent += `<div style="margin-top:8px; font-size:14px; font-weight:bold">Vessel Details</div>`
+          if (p.vesselName) popupContent += `<div style="font-size:13px"><b>Vessel:</b> ${p.vesselName}</div>`
+          if (p.ownerName) popupContent += `<div style="font-size:13px"><b>Owner:</b> ${p.ownerName}</div>`
+          if (p.barangay) popupContent += `<div style="font-size:13px"><b>Barangay:</b> ${p.barangay}</div>`
+        }
+        popupContent += `<div style="margin-top:8px"><button onclick="openUserHistory('${p.userId}')" style="width:auto;height:auto;padding:6px 10px">View History</button></div>`
+        
+        if (marker) {
+          marker.bindPopup(popupContent)
+        }
 
         if ((p.status === 'transit' || isActive) && p.accuracy != null && Number.isFinite(p.accuracy) && p.accuracy > 0) {
           let circle = circlesByUserId.get(p.userId)
@@ -1317,45 +1418,91 @@
         showAdminModule('mod_zones')
       }
 
+      function scheduleRealtimeAdminRefresh(options = {}) {
+        const { includeActivity = false, includeVessels = false } = options
+        window._rtAdminRefreshFlags = window._rtAdminRefreshFlags || { includeActivity: false, includeVessels: false }
+        window._rtAdminRefreshFlags.includeActivity = window._rtAdminRefreshFlags.includeActivity || includeActivity
+        window._rtAdminRefreshFlags.includeVessels = window._rtAdminRefreshFlags.includeVessels || includeVessels
+        if (window._rtAdminRefreshTimer) return
+        window._rtAdminRefreshTimer = setTimeout(async () => {
+          const flags = window._rtAdminRefreshFlags || { includeActivity: false, includeVessels: false }
+          window._rtAdminRefreshTimer = null
+          window._rtAdminRefreshFlags = { includeActivity: false, includeVessels: false }
+          try { await loadData() } catch {}
+          if (flags.includeActivity || state.currentModule === 'mod_activity') {
+            try { await loadActivity() } catch {}
+          }
+          if (flags.includeVessels || state.currentModule === 'mod_vessels') {
+            try { await loadVesselsAdmin() } catch {}
+          }
+        }, 250)
+      }
       function ensureLive(force) {
-        if (window._liveES && !force) {
-           if (window._liveES.readyState !== 2) return 
-           window._liveES.close()
-        }
-        if (window._liveES) { window._liveES.close(); window._liveES = null }
+        if (window._socket && !force) return
+        if (window._socket) { window._socket.disconnect(); window._socket = null }
         
-        console.log('Connecting to live stream...')
-        window._liveES = new EventSource('/api/admin/live?token='+encodeURIComponent(state.token))
+        console.log('Connecting to Socket.IO...')
+        window._socket = io()
         
-        window._liveES.onopen = () => console.log('Live stream connected')
+        window._socket.on('connect', () => console.log('Socket.IO connected'))
         
-        window._liveES.onerror = function(e) {
-          console.log('Live stream error, closing', e)
-          if (window._liveES) { window._liveES.close(); window._liveES = null }
-          // Retry after 5s
-          setTimeout(() => ensureLive(), 5000)
-        }
+        window._socket.on('disconnect', () => {
+          console.log('Socket.IO disconnected, reconnecting...')
+          setTimeout(() => ensureLive(true), 5000)
+        })
         
-        window._liveES.onmessage = (ev) => {
+        window._socket.on('error', (err) => {
+          console.error('Socket.IO error:', err)
+        })
+        
+        window._socket.on('catch', () => {
+          scheduleRealtimeAdminRefresh({ includeVessels: state.currentModule === 'mod_vessels' })
+        })
+        
+        window._socket.on('alert', () => {
+          try { playNotificationSound() } catch {}
+          scheduleRealtimeAdminRefresh()
+        })
+
+        window._socket.on('activity', () => {
+          scheduleRealtimeAdminRefresh({ includeActivity: true })
+        })
+
+        window._socket.on('vessel', () => {
+          scheduleRealtimeAdminRefresh({ includeVessels: true })
+        })
+
+        window._socket.on('user', () => {
+          scheduleRealtimeAdminRefresh()
+        })
+
+        window._socket.on('protectedZone', () => {
+          scheduleRealtimeAdminRefresh()
+        })
+
+        window._socket.on('sync', (payload) => {
+          scheduleRealtimeAdminRefresh({
+            includeActivity: payload && payload.entity === 'activity',
+            includeVessels: payload && payload.entity === 'vessel'
+          })
+        })
+        
+        window._socket.on('status', (p) => {
           try {
-            const p = JSON.parse(ev.data)
-            if (p && p.type === 'catch') addCatchRow(p.item)
-            else if (p && p.type === 'alert') {
-              addAlertRow(p.item)
-              if (p.item && p.item.type === 'SOS' && String(p.item.status||'').toLowerCase() === 'pending') {
-                showSosPopup(p.item)
-              } else {
-                playNotificationSound()
-              }
-            }
-            else if (p && p.type === 'status' && p.userId != null) {
+            if (p && p.userId != null) {
               applyStatusEvent(p)
               if (state.currentModule === 'mod_map') {
                 const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
                 setUserMapStatus(`${n} active user(s)`)
               }
             }
-            else if (p && p.type === 'track_stop' && p.userId != null) {
+          } catch {}
+          scheduleRealtimeAdminRefresh()
+        })
+        
+        window._socket.on('track', (p) => {
+          try {
+            if (p && p.type === 'track_stop' && p.userId != null) {
               const uid = String(p.userId)
               const np = normalizeTrackPoint({ ...p, active: false, recordedAt: p.at || p.recordedAt })
               if (np) {
@@ -1370,8 +1517,7 @@
                 const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
                 setUserMapStatus(`${n} active user(s)`)
               }
-            }
-            else {
+            } else {
               const np = normalizeTrackPoint(p)
               if (np) {
                 if (!state.latestLocations) state.latestLocations = new Map()
@@ -1384,7 +1530,7 @@
               }
             }
           } catch {}
-        }
+        })
       }
       function addCatchRow(c) {
         const ct = document.getElementById('catches')
@@ -1403,7 +1549,6 @@
         if (a.type === 'Status: Active') typeStyle = 'background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
         else if (a.type === 'Status: In Port') typeStyle = 'background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
         else if (a.type === 'Status: In Transit') typeStyle = 'background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
-        else if (a.type === 'SOS') typeStyle = 'background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
         
         const typeDisplay = typeStyle ? `<span style="${typeStyle}">${a.type}</span>` : a.type
         const row = `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</td><td>${new Date(a.recordedAt).toLocaleString()}</td><td>${actions}</td></tr>`
@@ -1453,30 +1598,7 @@
         state._alarm = null
         state._alarmOn = false
       }
-      function showSosPopup(a){
-        state.sosCurrent = a
-        const ov = document.getElementById('sos_overlay')
-        const box = document.getElementById('sos_popup')
-        const uname = a.user ? a.user.name : (a.userName || a.userId)
-        const tm = new Date(a.recordedAt).toLocaleString()
-        box.innerHTML = `
-          <h3>🚨 SOS Alert</h3>
-          <div class="meta">A user has triggered an SOS.</div>
-          <p><b>User:</b> ${uname}<br><b>Location:</b> ${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}<br><b>Time:</b> ${tm}</p>
-          <div style="display:flex; gap:8px; justify-content:flex-end">
-            <button onclick="acknowledgeAlert('${a.id}');dismissSos('${a.id}')">Acknowledge</button>
-            <button onclick="resolveAlert('${a.id}');dismissSos('${a.id}')">Resolve</button>
-          </div>
-        `
-        ov.style.display = 'flex'
-        startAlarm()
-      }
-      function dismissSos(id){
-        stopAlarm()
-        state.sosCurrent = null
-        const ov = document.getElementById('sos_overlay')
-        ov.style.display = 'none'
-      }
+
 
       async function resolveAlert(id) {
         const headers = { 'Content-Type':'application/json', 'Authorization':'Bearer '+state.token }

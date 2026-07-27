@@ -12,14 +12,12 @@ const isConfigured = supabaseUrl &&
 let app
 if (isConfigured) {
   console.log('✅ Supabase configuration detected. Starting Supabase Backend...')
-  app = require('./server.supabase.js')
+  app = require('../server.supabase.js')
 } else {
   console.log('⚠️  Supabase is not configured.')
   console.log('🔄 Falling back to Local Mode (LowDB) to allow development...')
   console.log('   (To use Supabase, please set SUPABASE_URL and SUPABASE_ANON_KEY in your .env file)')
-  app = require('./server.local.js')
+  app = require('../server.local.js')
 }
 
-if (IS_SERVERLESS) {
-  module.exports = app
-}
+module.exports = app

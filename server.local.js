@@ -13,11 +13,32 @@ const exifr = require('exifr')
 const nodemailer = require('nodemailer')
 const webpush = require('web-push')
 const os = require('os')
+const http = require('http')
+const { Server } = require('socket.io')
 
 const app = express()
 app.use(cors())
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
+
+// Socket.IO setup
+let io = null
+function setupSocketIO(server) {
+  io = new Server(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  })
+
+  io.on('connection', (socket) => {
+    console.log('Client connected:', socket.id)
+
+    socket.on('disconnect', () => {
+      console.log('Client disconnected:', socket.id)
+    })
+  })
+}
 
 process.on('unhandledRejection', (e) => { try { console.error('unhandledRejection', e) } catch {} })
 process.on('uncaughtException', (e) => { try { console.error('uncaughtException', e) } catch {} })
@@ -39,6 +60,7 @@ const activityAdapter = new FileSync(path.join(DATA_DIR, 'activity_logs.json'))
 const imagesAdapter = new FileSync(path.join(DATA_DIR, 'images.json'))
 const protectedAreasAdapter = new FileSync(path.join(DATA_DIR, 'protected_areas.json'))
 const statusAdapter = new FileSync(path.join(DATA_DIR, 'status_events.json'))
+const vesselsAdapter = new FileSync(path.join(DATA_DIR, 'vessels.json'))
 
 const usersDb = low(usersAdapter)
 const catchesDb = low(catchesAdapter)
@@ -51,6 +73,7 @@ const activityDb = low(activityAdapter)
 const imagesDb = low(imagesAdapter)
 const protectedAreasDb = low(protectedAreasAdapter)
 const statusDb = low(statusAdapter)
+const vesselsDb = low(vesselsAdapter)
 
 usersDb.defaults({ users: [] }).write()
 catchesDb.defaults({ catches: [] }).write()
@@ -63,6 +86,7 @@ activityDb.defaults({ activity_logs: [] }).write()
 imagesDb.defaults({ images: [] }).write()
 protectedAreasDb.defaults({ protected_areas: [] }).write()
 statusDb.defaults({ status_events: [] }).write()
+vesselsDb.defaults({ vessels: [] }).write()
 
 const ACTIVE_TTL_MS = 35000
 const trackingStateByUserId = new Map()
@@ -129,6 +153,129 @@ function getUserTrackingStatus(userId, recordedAt) {
   if (Number.isFinite(t) && now - t <= ACTIVE_TTL_MS) return { active: true, lastSeenAt: t }
   return { active: false, lastSeenAt: Number.isFinite(t) ? t : null }
 }
+
+function normalizeText(value) {
+  const out = value == null ? '' : String(value).trim()
+  return out
+}
+
+function normalizeVesselRecord(record) {
+  return {
+    id: String(record.id),
+    vessel_registration_number: normalizeText(record.vessel_registration_number),
+    vessel_name: normalizeText(record.vessel_name),
+    owner_name: normalizeText(record.owner_name),
+    barangay: normalizeText(record.barangay),
+    createdAt: record.createdAt || record.created_at || new Date().toISOString(),
+    updatedAt: record.updatedAt || record.updated_at || new Date().toISOString()
+  }
+}
+
+function getAllVesselsLocal() {
+  return (vesselsDb.get('vessels').value() || []).map(normalizeVesselRecord)
+}
+
+function findVesselByIdLocal(id) {
+  if (!id) return null
+  return getAllVesselsLocal().find(v => v.id === String(id)) || null
+}
+
+function findVesselByRegistrationLocal(registrationNumber, excludeId) {
+  const target = normalizeText(registrationNumber).toLowerCase()
+  if (!target) return null
+  return getAllVesselsLocal().find(v => v.id !== excludeId && v.vessel_registration_number.toLowerCase() === target) || null
+}
+
+function seedLocalVesselsFromLegacyData() {
+  const existing = getAllVesselsLocal()
+  const byRegistration = new Set(existing.map(v => v.vessel_registration_number.toLowerCase()).filter(Boolean))
+  const additions = []
+
+  const users = usersDb.get('users').value() || []
+  users.forEach(u => {
+    const reg = normalizeText(u.vessel_registration_number || u.fisher_id)
+    const name = normalizeText(u.vessel_name)
+    const owner = normalizeText(u.name)
+    if (!reg || !name || !owner || byRegistration.has(reg.toLowerCase())) return
+    byRegistration.add(reg.toLowerCase())
+    additions.push({
+      id: nanoid(),
+      vessel_registration_number: reg,
+      vessel_name: name,
+      owner_name: owner,
+      createdAt: u.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+  })
+
+  const catches = catchesDb.get('catches').value() || []
+  catches.forEach(c => {
+    const reg = normalizeText(c.vesselRegistrationNumber)
+    const name = normalizeText(c.vesselName || c.vessel)
+    const owner = normalizeText(c.ownerName)
+    if (!reg || !name || !owner || byRegistration.has(reg.toLowerCase())) return
+    byRegistration.add(reg.toLowerCase())
+    additions.push({
+      id: nanoid(),
+      vessel_registration_number: reg,
+      vessel_name: name,
+      owner_name: owner,
+      createdAt: c.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+  })
+
+  if (additions.length) {
+    vesselsDb.get('vessels').push(...additions).write()
+  }
+}
+
+function resolveCatchVesselLocal(body) {
+  const vesselId = normalizeText(body.vesselId)
+  if (vesselId) {
+    const vessel = findVesselByIdLocal(vesselId)
+    if (!vessel) {
+      const err = new Error('Selected vessel not found')
+      err.statusCode = 400
+      throw err
+    }
+    return {
+      vesselId: vessel.id,
+      vessel: vessel.vessel_name,
+      vesselRegistrationNumber: vessel.vessel_registration_number,
+      vesselName: vessel.vessel_name,
+      ownerName: vessel.owner_name,
+      barangay: vessel.barangay
+    }
+  }
+
+  return {
+    vesselId: null,
+    vessel: normalizeText(body.vessel || body.vesselName) || null,
+    vesselRegistrationNumber: normalizeText(body.vesselRegistrationNumber) || null,
+    vesselName: normalizeText(body.vesselName || body.vessel) || null,
+    ownerName: normalizeText(body.ownerName) || null,
+    barangay: normalizeText(body.barangay) || null
+  }
+}
+
+function enrichCatchWithVesselLocal(catchItem) {
+  let vessel = catchItem && catchItem.vesselId ? findVesselByIdLocal(catchItem.vesselId) : null
+  // If no vessel found by ID, try by registration number
+  if (!vessel && catchItem && catchItem.vesselRegistrationNumber) {
+    vessel = findVesselByRegistrationLocal(catchItem.vesselRegistrationNumber)
+  }
+  return {
+    ...catchItem,
+    vesselId: catchItem.vesselId || (vessel ? vessel.id : null),
+    vesselRegistrationNumber: catchItem.vesselRegistrationNumber || (vessel ? vessel.vessel_registration_number : null),
+    vesselName: catchItem.vesselName || catchItem.vessel || (vessel ? vessel.vessel_name : null),
+    ownerName: catchItem.ownerName || (vessel ? vessel.owner_name : null),
+    barangay: catchItem.barangay || (vessel ? vessel.barangay : null)
+  }
+}
+
+seedLocalVesselsFromLegacyData()
 
 const initialSpecies = [
   'Galunggong (Mackerel Scad)',
@@ -198,17 +345,17 @@ function auth(requiredRole) {
 }
 
 app.post('/api/auth/register', async (req, res) => {
-  let { name, email, password, role, barangay } = req.body
+  let { name, email, password, role } = req.body
   if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' })
   email = String(email).trim().toLowerCase()
   const exists = usersDb.get('users').find(u => String(u.email||'').trim().toLowerCase() === email).value()
   if (exists) return res.status(409).json({ error: 'Email already registered' })
   const hash = bcrypt.hashSync(password, 10)
   const roleSafe = ['admin','inspector','fisher','researcher'].includes((role||'').toLowerCase()) ? role.toLowerCase() : 'fisher'
-  const user = { id: nanoid(), name, email, pass: hash, role: roleSafe, barangay: barangay || null, createdAt: new Date().toISOString() }
+  const user = { id: nanoid(), name, email, pass: hash, role: roleSafe, createdAt: new Date().toISOString() }
   usersDb.get('users').push(user).write()
   const token = createToken(user)
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, barangay: user.barangay } })
+  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } })
 })
 
 app.post('/api/auth/login', async (req, res) => {
@@ -221,7 +368,65 @@ app.post('/api/auth/login', async (req, res) => {
   const ok = bcrypt.compareSync(password, user.pass)
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
   const token = createToken(user)
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } })
+  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, barangay: user.barangay || null, vessel_name: user.vessel_name || null, fisher_id: user.fisher_id || null } })
+})
+
+// --- DASHBOARD STATS (Local Mode) ---
+app.get('/api/dashboard/stats', auth(), async (req, res) => {
+  try {
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    // 1. Total catch today (kg)
+    const catchesToday = catchesDb.get('catches').filter(c => new Date(c.capturedAt || c.createdAt) >= startOfToday).value() || []
+    const totalWeightToday = catchesToday.reduce((sum, c) => sum + (Number(c.weightKg) || 0), 0)
+
+    // 2. Active vessels
+    let activeVessels = 0
+    trackingStateByUserId.forEach(v => { if (v.active) activeVessels++ })
+
+    // 3. Total coastal activities this week
+    const activitiesWeek = activityDb.get('activity_logs').filter(a => new Date(a.created_at) >= startOfWeek).value() || []
+
+    // 4. Top 3 species this month
+    const monthlyCatches = catchesDb.get('catches').filter(c => new Date(c.capturedAt || c.createdAt) >= startOfMonth).value() || []
+    const speciesCounts = monthlyCatches.reduce((acc, c) => {
+      const s = c.species || 'Unknown'
+      acc[s] = (acc[s] || 0) + 1
+      return acc
+    }, {})
+    const topSpecies = Object.entries(speciesCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([name, count]) => ({ name, count }))
+
+    // 5. Monthly catch trend (last 6 months)
+    const trend = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      const mStart = new Date(d.getFullYear(), d.getMonth(), 1)
+      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+      const mData = catchesDb.get('catches').filter(c => {
+        const cat = new Date(c.capturedAt || c.createdAt)
+        return cat >= mStart && cat <= mEnd
+      }).value() || []
+      const mWeight = mData.reduce((sum, c) => sum + (Number(c.weightKg) || 0), 0)
+      trend.push({ month: d.toLocaleString('default', { month: 'short' }), weight: mWeight })
+    }
+
+    res.json({
+      totalWeightToday,
+      activeVessels,
+      activitiesWeek: activitiesWeek.length,
+      topSpecies,
+      trend
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // Public endpoint to install the first admin (browser-based setup)
@@ -241,9 +446,104 @@ app.post('/api/public/install_admin', (req, res) => {
   res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } })
 })
 
+app.get('/api/vessels', auth(), async (req, res) => {
+  res.json(getAllVesselsLocal())
+})
+
+app.get('/api/vessels/:id', auth(), async (req, res) => {
+  const vessel = findVesselByIdLocal(req.params.id)
+  if (!vessel) return res.status(404).json({ error: 'Vessel not found' })
+  res.json(vessel)
+})
+
+app.post('/api/vessels', auth(), async (req, res) => {
+  const vessel_registration_number = normalizeText(req.body.vessel_registration_number)
+  const vessel_name = normalizeText(req.body.vessel_name)
+  const owner_name = normalizeText(req.body.owner_name)
+  const barangay = normalizeText(req.body.barangay)
+  if (!vessel_registration_number || !vessel_name || !owner_name || !barangay) {
+    return res.status(400).json({ error: 'All vessel fields are required' })
+  }
+  if (findVesselByRegistrationLocal(vessel_registration_number)) {
+    return res.status(409).json({ error: 'Vessel registration number already exists' })
+  }
+  const vessel = {
+    id: nanoid(),
+    vessel_registration_number,
+    vessel_name,
+    owner_name,
+    barangay,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+  vesselsDb.get('vessels').push(vessel).write()
+  const normalized = normalizeVesselRecord(vessel)
+  broadcastVessel(normalized)
+  res.json(normalized)
+})
+
+app.patch('/api/vessels/:id', auth(), async (req, res) => {
+  const id = String(req.params.id)
+  const existing = findVesselByIdLocal(id)
+  if (!existing) return res.status(404).json({ error: 'Vessel not found' })
+
+  const vessel_registration_number = normalizeText(req.body.vessel_registration_number)
+  const vessel_name = normalizeText(req.body.vessel_name)
+  const owner_name = normalizeText(req.body.owner_name)
+  const barangay = normalizeText(req.body.barangay)
+  if (!vessel_registration_number || !vessel_name || !owner_name || !barangay) {
+    return res.status(400).json({ error: 'All vessel fields are required' })
+  }
+  if (findVesselByRegistrationLocal(vessel_registration_number, id)) {
+    return res.status(409).json({ error: 'Vessel registration number already exists' })
+  }
+
+  const updatedAt = new Date().toISOString()
+  vesselsDb.get('vessels').find({ id }).assign({
+    vessel_registration_number,
+    vessel_name,
+    owner_name,
+    barangay,
+    updatedAt
+  }).write()
+
+  ;(catchesDb.get('catches').value() || []).forEach(c => {
+    if (String(c.vesselId || '') !== id) return
+    catchesDb.get('catches').find({ id: c.id }).assign({
+      vessel: vessel_name,
+      vesselRegistrationNumber: vessel_registration_number,
+      vesselName: vessel_name,
+      ownerName: owner_name
+    }).write()
+  })
+
+  const normalized = normalizeVesselRecord({ ...existing, vessel_registration_number, vessel_name, owner_name, barangay, updatedAt })
+  broadcastVessel(normalized)
+  res.json(normalized)
+})
+
+app.delete('/api/vessels/:id', auth('admin'), async (req, res) => {
+  const id = String(req.params.id)
+  const existing = findVesselByIdLocal(id)
+  if (!existing) return res.status(404).json({ error: 'Vessel not found' })
+  vesselsDb.set('vessels', vesselsDb.get('vessels').filter(v => String(v.id) !== id).value()).write()
+  ;(catchesDb.get('catches').value() || []).forEach(c => {
+    if (String(c.vesselId || '') !== id) return
+    catchesDb.get('catches').find({ id: c.id }).assign({ vesselId: null }).write()
+  })
+  broadcastSync({ type: 'sync', entity: 'vessel', action: 'delete', id })
+  res.json({ ok: true })
+})
+
 app.post('/api/catches', auth(), async (req, res) => {
-  const { species, netType, weightKg, lengthCm, gear, vessel, photoUrl, note, lat, lng, capturedAt } = req.body
+  const { species, netType, weightKg, lengthCm, gear, photoUrl, note, lat, lng, capturedAt } = req.body
   if (lat == null || lng == null) return res.status(400).json({ error: 'Missing coordinates' })
+  let vesselInfo
+  try {
+    vesselInfo = resolveCatchVesselLocal(req.body)
+  } catch (e) {
+    return res.status(e.statusCode || 400).json({ error: e.message })
+  }
   const catchItem = {
     id: nanoid(),
     userId: req.user.id,
@@ -252,7 +552,11 @@ app.post('/api/catches', auth(), async (req, res) => {
     weightKg: weightKg || null,
     lengthCm: lengthCm || null,
     gear: gear || null,
-    vessel: vessel || null,
+    vesselId: vesselInfo.vesselId,
+    vessel: vesselInfo.vessel,
+    vesselRegistrationNumber: vesselInfo.vesselRegistrationNumber,
+    vesselName: vesselInfo.vesselName,
+    ownerName: vesselInfo.ownerName,
     photoUrl: photoUrl || null,
     note: note || null,
     lat, lng,
@@ -277,14 +581,14 @@ app.post('/api/catches', auth(), async (req, res) => {
       broadcastAlert(alert)
     }
   } catch {}
-  res.json(catchItem)
+  res.json(enrichCatchWithVesselLocal(catchItem))
 })
 
 // Photo upload with EXIF GPS fallback
 const upload = multer({ dest: UPLOAD_DIR })
 app.post('/api/catches/upload', auth(), upload.single('photo'), async (req, res) => {
   try {
-    const { species, netType, weightKg, lengthCm, gear, vessel, note, lat, lng, capturedAt } = req.body
+    const { species, netType, weightKg, lengthCm, gear, note, lat, lng, capturedAt } = req.body
     let latNum = lat != null ? parseFloat(lat) : null
     let lngNum = lng != null ? parseFloat(lng) : null
     if ((latNum == null || lngNum == null) && req.file) {
@@ -292,10 +596,16 @@ app.post('/api/catches/upload', auth(), upload.single('photo'), async (req, res)
       if (exif && exif.latitude && exif.longitude) { latNum = exif.latitude; lngNum = exif.longitude }
     }
     if (latNum == null || lngNum == null) return res.status(400).json({ error: 'Missing coordinates' })
+    const vesselInfo = resolveCatchVesselLocal(req.body)
     const item = {
       id: nanoid(), userId: req.user.id,
       species: species || 'unknown', netType: netType || null, weightKg: weightKg ? parseFloat(weightKg) : null,
-      lengthCm: lengthCm ? parseFloat(lengthCm) : null, gear: gear || null, vessel: vessel || null,
+      lengthCm: lengthCm ? parseFloat(lengthCm) : null, gear: gear || null,
+      vesselId: vesselInfo.vesselId,
+      vessel: vesselInfo.vessel,
+      vesselRegistrationNumber: vesselInfo.vesselRegistrationNumber,
+      vesselName: vesselInfo.vesselName,
+      ownerName: vesselInfo.ownerName,
       photoUrl: req.file ? `/uploads/${req.file.filename}` : null,
       note: note || null, lat: latNum, lng: lngNum,
       capturedAt: capturedAt || new Date().toISOString(), createdAt: new Date().toISOString()
@@ -307,7 +617,7 @@ app.post('/api/catches/upload', auth(), upload.single('photo'), async (req, res)
       const img = { id: nanoid(), catch_id: item.id, bucket_key: `/uploads/${req.file.filename}`, exif: exif || null, created_at: new Date().toISOString() }
       imagesDb.get('images').push(img).write()
     }
-    res.json(item)
+    res.json(enrichCatchWithVesselLocal(item))
   } catch (e) {
     res.status(500).json({ error: 'Upload failed' })
   }
@@ -315,14 +625,14 @@ app.post('/api/catches/upload', auth(), upload.single('photo'), async (req, res)
 
 app.get('/api/catches/me', auth(), async (req, res) => {
   const items = catchesDb.get('catches').filter(c => c.userId === req.user.id).value()
-  res.json(items)
+  res.json(items.map(enrichCatchWithVesselLocal))
 })
 
 app.get('/api/catches', auth('admin'), async (req, res) => {
   const allC = catchesDb.get('catches').value()
   const allU = usersDb.get('users').value()
   const list = allC.map(c => ({
-    ...c,
+    ...enrichCatchWithVesselLocal(c),
     user: allU.find(u => u.id === c.userId) ? { id: c.userId, name: allU.find(u => u.id === c.userId).name, email: allU.find(u => u.id === c.userId).email } : null
   }))
   res.json(list)
@@ -330,17 +640,37 @@ app.get('/api/catches', auth('admin'), async (req, res) => {
 
 app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
-  const allowed = ['species','weightKg','lengthCm','gear','vessel','note']
+  const allowed = ['species','weightKg','lengthCm','gear','note','status','adminNote']
   const updates = {}
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k] })
+  if (req.body.vesselId !== undefined) {
+    try {
+      const vesselInfo = resolveCatchVesselLocal(req.body)
+      Object.assign(updates, {
+        vesselId: vesselInfo.vesselId,
+        vessel: vesselInfo.vessel,
+        vesselRegistrationNumber: vesselInfo.vesselRegistrationNumber,
+        vesselName: vesselInfo.vesselName,
+        ownerName: vesselInfo.ownerName
+      })
+    } catch (e) {
+      return res.status(e.statusCode || 400).json({ error: e.message })
+    }
+  }
   const exists = catchesDb.get('catches').find({ id }).value(); if (!exists) return res.status(404).json({ error: 'Not found' })
-  catchesDb.get('catches').find({ id }).assign(updates).write(); res.json({ ok: true })
+  catchesDb.get('catches').find({ id }).assign(updates).write()
+  const updatedCatch = catchesDb.get('catches').find({ id }).value()
+  const enriched = enrichCatchWithVesselLocal(updatedCatch)
+  broadcastCatch(enriched)
+  res.json({ ok: true })
 })
 
 app.delete('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
   const exists = catchesDb.get('catches').find({ id }).value(); if (!exists) return res.status(404).json({ error: 'Not found' })
-  catchesDb.set('catches', catchesDb.get('catches').filter(c => c.id !== id).value()).write(); res.json({ ok: true })
+  catchesDb.set('catches', catchesDb.get('catches').filter(c => c.id !== id).value()).write()
+  broadcastSync({ type: 'sync', entity: 'catch', action: 'delete', id })
+  res.json({ ok: true })
 })
 
 app.post('/api/track', auth(), async (req, res) => {
@@ -501,7 +831,7 @@ app.get('/api/track/me', auth(), async (req, res) => {
 
 app.get('/api/admin/users', auth('admin'), async (req, res) => {
   const all = usersDb.get('users').value()
-  res.json(all.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, barangay: u.barangay || null, createdAt: u.createdAt })))
+  res.json(all.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, barangay: u.barangay || null, vessel_name: u.vessel_name || null, fisher_id: u.fisher_id || null, createdAt: u.createdAt })))
 })
 
 app.post('/api/admin/users', auth('admin'), async (req, res) => {
@@ -513,7 +843,9 @@ app.post('/api/admin/users', auth('admin'), async (req, res) => {
   const roleSafe = ['admin','inspector','fisher','researcher'].includes((role||'').toLowerCase()) ? role.toLowerCase() : 'fisher'
   const user = { id: nanoid(), name, email, pass: bcrypt.hashSync(password, 10), role: roleSafe, createdAt: new Date().toISOString() }
   usersDb.get('users').push(user).write()
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
+  const userWithoutPass = { id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt }
+  broadcastUser(userWithoutPass)
+  res.json(userWithoutPass)
 })
 
 app.patch('/api/admin/users/:id/role', auth('admin'), async (req, res) => {
@@ -524,6 +856,9 @@ app.patch('/api/admin/users/:id/role', auth('admin'), async (req, res) => {
   const user = usersDb.get('users').find({ id }).value()
   if (!user) return res.status(404).json({ error: 'User not found' })
   usersDb.get('users').find({ id }).assign({ role: role.toLowerCase() }).write()
+  const updatedUser = usersDb.get('users').find({ id }).value()
+  const userWithoutPass = { id: updatedUser.id, name: updatedUser.name, email: updatedUser.email, role: updatedUser.role, createdAt: updatedUser.createdAt }
+  broadcastUser(userWithoutPass)
   res.json({ ok: true })
 })
 
@@ -541,6 +876,7 @@ app.delete('/api/admin/users/:id', auth('admin'), async (req, res) => {
   alertsDb.set('alerts', alertsDb.get('alerts').filter(a => a.userId !== id).value()).write()
   imagesDb.set('images', imagesDb.get('images').filter(i => !catchIds.includes(i.catch_id)).value()).write()
   pushDb.set('subscriptions', pushDb.get('subscriptions').filter(s => s.userId !== id).value()).write()
+  broadcastSync({ type: 'sync', entity: 'user', action: 'delete', id })
   res.json({ ok: true })
 })
 
@@ -566,9 +902,60 @@ app.get('/api/admin/status_history', auth(['admin','inspector']), async (req, re
   })
   res.json(out)
 })
-app.get('/api/admin/live_locations', auth(['admin','inspector']), (req, res) => {
+app.get('/api/users', auth(), async (req, res) => {
+  const all = usersDb.get('users').value()
+  res.json(all.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, barangay: u.barangay || null, vessel_name: u.vessel_name || null, fisher_id: u.fisher_id || null, createdAt: u.createdAt })))
+})
+
+app.get('/api/live_locations', auth(), (req, res) => {
   const pts = tracksDb.get('tracks').value()
   const us = usersDb.get('users').value()
+
+  const latestByUserId = new Map()
+  statusStateByUserId.forEach((st, userId) => {
+    if (!st || !userId) return
+    const lat = st.lat != null ? Number(st.lat) : NaN
+    const lng = st.lng != null ? Number(st.lng) : NaN
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    const at = st.at ? String(st.at) : null
+    const t = at ? new Date(at).getTime() : NaN
+    if (!Number.isFinite(t)) return
+    latestByUserId.set(String(userId), { userId: String(userId), lat, lng, accuracy: null, speed: null, heading: null, recordedAt: at, _t: t })
+  })
+  pts.forEach(p => {
+    const userId = p && p.userId ? String(p.userId) : null
+    if (!userId) return
+    const recordedAt = p.recordedAt || null
+    const t = recordedAt ? new Date(recordedAt).getTime() : NaN
+    if (!Number.isFinite(t)) return
+    const cur = latestByUserId.get(userId)
+    if (!cur || t > cur._t) latestByUserId.set(userId, { ...p, _t: t })
+  })
+  const activeUserIds = new Set()
+  trackingStateByUserId.forEach((v, k) => { if (v.active) activeUserIds.add(String(k)) })
+  const active = Array.from(latestByUserId.values()).filter(p => activeUserIds.has(String(p.userId))).map(p => { delete p._t; return { ...p, active: true } })
+  res.json(active)
+})
+
+app.get('/api/status_history', auth(), async (req, res) => {
+  const userId = req.query && req.query.userId != null ? String(req.query.userId) : null
+  const limitRaw = req.query && req.query.limit != null ? Number(req.query.limit) : 200
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 200
+  const us = usersDb.get('users').value()
+  let list = statusDb.get('status_events').value() || []
+  if (userId) list = list.filter(e => String(e.userId) === userId)
+  list = list.slice().sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)).slice(0, limit)
+  const out = list.map(e => {
+    const u = us.find(x => x.id === e.userId)
+    return { ...e, user: u ? { id: u.id, name: u.name, email: u.email } : null }
+  })
+  res.json(out)
+})
+
+app.get('/api/admin/live_locations', auth(['admin', 'inspector']), (req, res) => {
+  const pts = tracksDb.get('tracks').value()
+  const us = usersDb.get('users').value()
+  const vs = vesselsDb.get('vessels').value()
 
   const latestByUserId = new Map()
   statusStateByUserId.forEach((st, userId) => {
@@ -600,7 +987,33 @@ app.get('/api/admin/live_locations', auth(['admin','inspector']), (req, res) => 
       const statusState = getUserEffectiveStatus(p.userId)
       const active = statusState.status === 'transit' ? st.active : false
       const lastSeenAt = active ? (st.lastSeenAt ? new Date(st.lastSeenAt).toISOString() : null) : (statusState.at || (st.lastSeenAt ? new Date(st.lastSeenAt).toISOString() : null))
-      return { ...rest, active, lastSeenAt, status: statusState.status, statusAt: statusState.at, user: u ? { id: u.id, name: u.name, email: u.email } : null }
+      
+      // Find vessel info for this user
+      let vesselInfo = null
+      if (rest.vesselId) {
+        vesselInfo = vs.find(v => v.id === rest.vesselId)
+      }
+      if (!vesselInfo && rest.vesselRegistrationNumber) {
+        vesselInfo = vs.find(v => v.vessel_registration_number === rest.vesselRegistrationNumber)
+      }
+      // Try to find vessel linked to the user
+      if (!vesselInfo && u) {
+        vesselInfo = vs.find(v => v.owner_name && v.owner_name.toLowerCase().includes((u.name || '').toLowerCase()))
+      }
+      
+      return { 
+        ...rest, 
+        active, 
+        lastSeenAt, 
+        status: statusState.status, 
+        statusAt: statusState.at, 
+        user: u ? { ...u } : null, // include all user fields
+        vesselId: vesselInfo ? vesselInfo.id : rest.vesselId,
+        vesselRegistrationNumber: vesselInfo ? vesselInfo.vessel_registration_number : rest.vesselRegistrationNumber,
+        vesselName: vesselInfo ? vesselInfo.vessel_name : rest.vesselName,
+        ownerName: vesselInfo ? vesselInfo.owner_name : rest.ownerName,
+        barangay: vesselInfo ? vesselInfo.barangay : rest.barangay
+      }
     })
 
   res.json(out)
@@ -664,6 +1077,7 @@ app.delete('/api/admin/alerts/:id', auth('admin'), (req, res) => {
   const exists = alertsDb.get('alerts').find({ id }).value()
   if (!exists) return res.status(404).json({ error: 'Not found' })
   alertsDb.set('alerts', alertsDb.get('alerts').filter(a => a.id !== id).value()).write()
+  broadcastSync({ type: 'sync', entity: 'alert', action: 'delete', id })
   res.json({ ok: true })
 })
 app.post('/api/alerts', auth(), (req, res) => {
@@ -879,9 +1293,18 @@ app.get('/api/admin/live', auth(['admin','inspector']), (req, res) => {
   sseClients.push(res)
   
   // Send a heartbeat every 30s to keep connection alive
-  const hb = setInterval(() => res.write(':\n\n'), 30000)
+  const hb = setInterval(() => {
+    if (!res.destroyed) {
+      res.write(':\n\n')
+    }
+  }, 30000)
   
   req.on('close', () => {
+    clearInterval(hb)
+    const i = sseClients.indexOf(res)
+    if (i >= 0) sseClients.splice(i,1)
+  })
+  req.on('error', () => {
     clearInterval(hb)
     const i = sseClients.indexOf(res)
     if (i >= 0) sseClients.splice(i,1)
@@ -890,22 +1313,55 @@ app.get('/api/admin/live', auth(['admin','inspector']), (req, res) => {
 function broadcastTrack(point) {
   const data = `data: ${JSON.stringify(point)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Track):', e.message) } })
+  if (io) io.emit('track', point)
 }
 function broadcastStatus(payload) {
   const data = `data: ${JSON.stringify(payload)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Status):', e.message) } })
+  if (io) io.emit('status', payload)
 }
 function broadcastCatch(item) {
   const u = usersDb.get('users').find({ id: item.userId }).value()
   const payload = { type: 'catch', item: { ...item, user: u ? { id: u.id, name: u.name, email: u.email } : null } }
   const data = `data: ${JSON.stringify(payload)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Catch):', e.message) } })
+  if (io) io.emit('catch', payload)
 }
 function broadcastAlert(a) {
   const u = usersDb.get('users').find({ id: a.userId }).value()
   const payload = { type: 'alert', item: { ...a, user: u ? { id: u.id, name: u.name, email: u.email } : null } }
   const data = `data: ${JSON.stringify(payload)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Alert):', e.message) } })
+  if (io) io.emit('alert', payload)
+}
+function broadcastUser(user) {
+  const payload = { type: 'user', item: user }
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (User):', e.message) } })
+  if (io) io.emit('user', payload)
+}
+function broadcastVessel(vessel) {
+  const payload = { type: 'vessel', item: vessel }
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Vessel):', e.message) } })
+  if (io) io.emit('vessel', payload)
+}
+function broadcastProtectedZone(zone) {
+  const payload = { type: 'protectedZone', item: zone }
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (ProtectedZone):', e.message) } })
+  if (io) io.emit('protectedZone', payload)
+}
+function broadcastActivity(activity) {
+  const payload = { type: 'activity', item: activity }
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Activity):', e.message) } })
+  if (io) io.emit('activity', payload)
+}
+function broadcastSync(payload) {
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Sync):', e.message) } })
+  if (io) io.emit('sync', payload)
 }
 
 app.get('/', (req, res) => {
@@ -919,7 +1375,6 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'))
 })
 
-const http = require('http')
 const BASE_PORT = parseInt(process.env.PORT || '3000', 10)
 let CURRENT_PORT = BASE_PORT
 function getLANIPs() {
@@ -932,6 +1387,7 @@ function getLANIPs() {
 }
 function startServer(p) {
   const server = http.createServer(app)
+  setupSocketIO(server)
   server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
       const next = p + 1
@@ -986,6 +1442,7 @@ app.post('/api/activity_logs', auth(), (req, res) => {
   const cat = ACTIVITY_CATEGORIES[t] || (category || null)
   const log = { id: nanoid(), user_id: req.user.id, type: t, category: cat, location: { lat: parseFloat(lat), lng: parseFloat(lng) }, geom_line: Array.isArray(line) ? line : null, details: details || null, created_at: new Date().toISOString() }
   activityDb.get('activity_logs').push(log).write()
+  broadcastActivity(log)
   res.json(log)
 })
 app.post('/api/activity_logs/upload', auth(), upload.single('photo'), async (req, res) => {
@@ -1035,6 +1492,7 @@ app.post('/api/activity_logs/upload', auth(), upload.single('photo'), async (req
       const img = { id: nanoid(), activity_id: log.id, bucket_key: photoUrl, exif: exifFull || null, created_at: new Date().toISOString() }
       imagesDb.get('images').push(img).write()
     }
+    broadcastActivity(log)
     res.json(log)
   } catch (e) {
     res.status(500).json({ error: 'Upload failed' })
@@ -1068,6 +1526,7 @@ app.delete('/api/activity_logs/:id', auth(['admin','inspector']), (req, res) => 
   const exists = activityDb.get('activity_logs').find({ id }).value()
   if (!exists) return res.status(404).json({ error: 'Not found' })
   activityDb.set('activity_logs', activityDb.get('activity_logs').filter(a => a.id !== id).value()).write()
+  broadcastSync({ type: 'sync', entity: 'activity', action: 'delete', id })
   res.json({ ok: true })
 })
 app.get('/api/admin/activity_insights', auth(['admin','inspector']), (req, res) => {
@@ -1117,7 +1576,9 @@ app.post('/api/admin/protected_areas', auth('admin'), (req, res) => {
   const { name, geom, rules } = req.body
   if (!name || !geom) return res.status(400).json({ error: 'Missing fields' })
   const pa = { id: nanoid(), name, geom, rules: rules || null, created_at: new Date().toISOString() }
-  protectedAreasDb.get('protected_areas').push(pa).write(); res.json(pa)
+  protectedAreasDb.get('protected_areas').push(pa).write()
+  broadcastProtectedZone(pa)
+  res.json(pa)
 })
 app.patch('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
   const id = req.params.id
@@ -1128,13 +1589,16 @@ app.patch('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
     const ok = geom && geom.type === 'Polygon' && Array.isArray(geom.coordinates) && Array.isArray(geom.coordinates[0]) && geom.coordinates[0].length >= 4
     if (!ok) return res.status(400).json({ error: 'Invalid polygon' })
   }
-  const next = { name: name || pa.name, geom: geom || pa.geom, rules: rules !== undefined ? rules : pa.rules }
+  const next = { ...pa, name: name || pa.name, geom: geom || pa.geom, rules: rules !== undefined ? rules : pa.rules }
   protectedAreasDb.get('protected_areas').find({ id }).assign(next).write()
+  broadcastProtectedZone(next)
   res.json({ ok: true })
 })
 app.delete('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
   const id = req.params.id
-  protectedAreasDb.set('protected_areas', protectedAreasDb.get('protected_areas').filter(p => p.id !== id).value()).write(); res.json({ ok: true })
+  protectedAreasDb.set('protected_areas', protectedAreasDb.get('protected_areas').filter(p => p.id !== id).value()).write()
+  broadcastSync({ type: 'sync', entity: 'protectedZone', action: 'delete', id })
+  res.json({ ok: true })
 })
 
 app.use((err, req, res, next) => {

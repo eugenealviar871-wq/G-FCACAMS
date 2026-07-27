@@ -8,8 +8,11 @@ create table public.profiles (
   id uuid references auth.users not null primary key,
   email text,
   name text,
-  role text default 'fisher', -- 'admin', 'fisher'
+  role text default 'fisher', -- 'admin', 'fisher', 'recorder'
   barangay text,
+  fisher_id text, -- Fisher ID / BFAR Registration No.
+  vessel_name text,
+  municipality text,
   created_at timestamptz default now()
 );
 
@@ -18,6 +21,24 @@ alter table public.profiles enable row level security;
 create policy "Public profiles are viewable by everyone" on public.profiles for select using (true);
 create policy "Users can insert their own profile" on public.profiles for insert with check (auth.uid() = id);
 create policy "Users can update their own profile" on public.profiles for update using (auth.uid() = id);
+
+-- VESSELS
+create table public.vessels (
+  id uuid default uuid_generate_v4() primary key,
+  vessel_registration_number text not null unique,
+  vessel_name text not null,
+  owner_name text not null,
+  barangay text not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.vessels enable row level security;
+create policy "Authenticated users can view vessels" on public.vessels for select using (auth.uid() is not null);
+create policy "Authenticated users can insert vessels" on public.vessels for insert with check (auth.uid() is not null);
+create policy "Authenticated users can update vessels" on public.vessels for update using (auth.uid() is not null);
+create policy "Admins can delete vessels" on public.vessels for delete using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
 
 -- TRACKS
 create table public.tracks (
@@ -56,12 +77,16 @@ create policy "Users can insert status events" on public.status_events for inser
 create table public.catches (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id),
+  vessel_id uuid references public.vessels(id),
   species text,
   weight float,
   length float,
   net_type text,
   gear text,
   vessel text,
+  vessel_registration_number text,
+  vessel_name text,
+  owner_name text,
   image_url text,
   lat float,
   lng float,
@@ -73,6 +98,18 @@ create table public.catches (
 alter table public.catches enable row level security;
 create policy "Catches viewable by everyone" on public.catches for select using (true);
 create policy "Users can insert catches" on public.catches for insert with check (auth.uid() = user_id);
+
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger vessels_set_updated_at
+  before update on public.vessels
+  for each row execute procedure public.set_updated_at();
 
 -- ALERTS
 create table public.alerts (
@@ -126,8 +163,15 @@ create policy "Species viewable by everyone" on public.species for select using 
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, email, name, role)
-  values (new.id, new.email, new.raw_user_meta_data->>'name', coalesce(new.raw_user_meta_data->>'role', 'fisher'));
+  insert into public.profiles (id, email, name, role, fisher_id, vessel_name)
+  values (
+    new.id,
+    new.email,
+    new.raw_user_meta_data->>'name',
+    coalesce(new.raw_user_meta_data->>'role', 'fisher'),
+    new.raw_user_meta_data->>'fisher_id',
+    new.raw_user_meta_data->>'vessel_name'
+  );
   return new;
 end;
 $$ language plpgsql security definer;

@@ -5,3 +5,4 @@ uploads/
 .DS_Store
 .vercel/
 package-lock.json
+public/config.js

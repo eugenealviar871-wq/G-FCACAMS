@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>FishMonitor</title>
+    <script>
+      const token = localStorage.getItem('fish_token');
+      const user = JSON.parse(localStorage.getItem('fish_user') || 'null');
+      if (token && user) {
+        if (user.role === 'admin') {
+          location.href = '/admin.html';
+        } else {
+          location.href = '/user.html';
+        }
+      } else {
+        location.href = '/login.html';
+      }
+    </script>
+  </head>
+  <body>
+    Redirecting...
+  </body>
+</html>
