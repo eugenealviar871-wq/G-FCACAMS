@@ -8,37 +8,12 @@ const fs = require('fs')
 const path = require('path')
 const { nanoid } = require('nanoid')
 const webpush = require('web-push')
-const { Server } = require('socket.io')
 
 const app = express()
 app.use(cors())
 app.use(express.json({ limit: '5mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(express.static('public'))
-
-// Socket.IO setup (only used for local development)
-let io = null
-function setupSocketIO(server) {
-  if (IS_SERVERLESS) {
-    console.log('Serverless mode detected, skipping Socket.IO setup (using Supabase Realtime instead)')
-    return
-  }
-  
-  io = new Server(server, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
-    }
-  })
-
-  io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id)
-
-    socket.on('disconnect', () => {
-      console.log('Client disconnected:', socket.id)
-    })
-  })
-}
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
@@ -151,13 +126,12 @@ function auth(requiredRole) {
   }
 }
 
-// --- BROADCASTING (SSE + Socket.IO) ---
+// --- SSE BROADCASTING ---
 function broadcast(data) {
   const msg = `data: ${JSON.stringify(data)}\n\n`
   sseClients.forEach(res => {
     try { res.write(msg) } catch (e) { console.error('SSE Error', e.message) }
   })
-  if (io) io.emit(data.type || 'update', data)
 }
 
 // --- AUTH ENDPOINTS ---
@@ -233,7 +207,6 @@ app.post('/api/vessels', auth(), async (req, res) => {
     barangay
   }).select().single()
   if (error) return res.status(400).json({ error: error.message })
-  broadcast({ type: 'vessel', item: data })
   res.json(data)
 })
 
@@ -267,7 +240,6 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
   }).eq('vessel_id', id)
   if (catchUpdateError) return res.status(400).json({ error: catchUpdateError.message })
 
-  broadcast({ type: 'vessel', item: data })
   res.json(data)
 })
 
@@ -280,7 +252,6 @@ app.delete('/api/vessels/:id', auth('admin'), async (req, res) => {
 
   const { error } = await supabase.from('vessels').delete().eq('id', id)
   if (error) return res.status(400).json({ error: error.message })
-  broadcast({ type: 'sync', entity: 'vessel', action: 'delete', id })
   res.json({ ok: true })
 })
 
@@ -621,7 +592,7 @@ app.get('/api/catches', auth('admin'), async (req, res) => {
 
 app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
-  const { species, weightKg, lengthCm, gear, note, status, adminNote } = req.body
+  const { species, weightKg, lengthCm, gear, note } = req.body
   
   const updates = {}
   if (species !== undefined) updates.species = species
@@ -629,8 +600,6 @@ app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   if (lengthCm !== undefined) updates.length = lengthCm
   if (gear !== undefined) updates.gear = gear
   if (note !== undefined) updates.notes = note
-  if (status !== undefined) updates.status = status
-  if (adminNote !== undefined) updates.admin_note = adminNote
   if (req.body.vesselId !== undefined) {
     try {
       const vesselInfo = await resolveCatchVesselSupabase(req.body)
@@ -644,27 +613,8 @@ app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
     }
   }
 
-  const { data, error } = await supabase.from('catches').update(updates).eq('id', id).select('*, profiles(id, name, email), vessels(*)').maybeSingle()
+  const { error } = await supabase.from('catches').update(updates).eq('id', id)
   if (error) return res.status(400).json({ error: error.message })
-  if (data) {
-    const enriched = {
-      ...data,
-      user: data.profiles ? { id: data.profiles.id, name: data.profiles.name, email: data.profiles.email } : null,
-      userId: data.user_id,
-      vesselId: data.vessel_id,
-      vesselRegistrationNumber: data.vessel_registration_number,
-      vesselName: data.vessel_name,
-      ownerName: data.owner_name,
-      barangay: data.vessels ? data.vessels.barangay : null,
-      weightKg: data.weight,
-      lengthCm: data.length,
-      netType: data.net_type,
-      capturedAt: data.recorded_at,
-      photoUrl: data.image_url,
-      note: data.notes
-    }
-    broadcast({ type: 'catch', item: enriched })
-  }
   res.json({ ok: true })
 })
 
@@ -672,7 +622,6 @@ app.delete('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
   const { error } = await supabase.from('catches').delete().eq('id', id)
   if (error) return res.status(400).json({ error: error.message })
-  broadcast({ type: 'sync', entity: 'catch', action: 'delete', id })
   res.json({ ok: true })
 })
 
@@ -932,12 +881,11 @@ app.get('/api/admin/live', auth(['admin','inspector']), (req, res) => {
 
 if (IS_SERVERLESS) {
   module.exports = app
-} else {
+} else if (require.main === module) {
   const PORT = process.env.PORT || 3001
-  const http = require('http')
-  const server = http.createServer(app)
-  setupSocketIO(server)
-  server.listen(PORT, () => {
+  app.listen(PORT, () => {
     console.log(`Supabase Server running on port ${PORT}`)
   })
+} else {
+  module.exports = app
 }

@@ -16,9 +16,6 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/config.js"></script>
-    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root {
         --primary: #0077B6; /* Ocean Blue */
@@ -750,8 +747,7 @@
         trackMap: null, trackMarker: null, trackAccuracyCircle: null, 
         trackRoute: null, trackRoutePts: [], trackRouteLastKey: null, 
         status: 'transit', statusAt: null, lastTrackSentAt: 0, lastTrackSentPos: null,
-        dashboardMap: null, dashboardMarkers: new Map(), catchChart: null,
-        socket: null
+        dashboardMap: null, dashboardMarkers: new Map(), catchChart: null
       }
       
       // Redirect if not logged in
@@ -783,72 +779,10 @@
           document.getElementById('user_role').textContent = user.role || 'Fisher';
         }
 
-        // Initialize Socket.IO for realtime sync
-        if (window.io) {
-          if (state.socket) state.socket.disconnect();
-          state.socket = io();
-
-          // Listen for events from server
-          state.socket.on('catch', async (data) => {
-            if (!data.item || data.item.userId !== state.user.id) return
-            await refreshRealtimeUserData({ catches: true, dashboard: state.currentModule === 'dashboard' })
-          });
-          state.socket.on('activity', async (data) => {
-            if (!data.item || data.item.user_id !== state.user.id) return
-            await refreshRealtimeUserData({ activity: true, dashboard: state.currentModule === 'dashboard' })
-          });
-          state.socket.on('vessel', async () => {
-            await refreshRealtimeUserData({ catches: true, vessels: true })
-          });
-          state.socket.on('user', async (data) => {
-            if (data.item && state.user && data.item.id === state.user.id) {
-              state.user = { ...state.user, ...data.item }
-              localStorage.setItem('fish_user', JSON.stringify(state.user))
-              document.getElementById('user_name').textContent = state.user.name || state.user.email
-              document.getElementById('user_role').textContent = state.user.role || 'Fisher'
-            }
-          });
-          state.socket.on('protectedZone', async () => {
-            if (state.currentModule === 'tracking' || state.currentModule === 'dashboard') {
-              await refreshRealtimeUserData({ dashboard: true })
-            }
-          });
-          state.socket.on('sync', async (payload) => {
-            if (!payload) return
-            await refreshRealtimeUserData({
-              catches: payload.entity === 'catch' || payload.entity === 'vessel',
-              activity: payload.entity === 'activity',
-              vessels: payload.entity === 'vessel',
-              dashboard: state.currentModule === 'dashboard'
-            })
-          });
-        }
-
         showModule('dashboard')
         loadMyCatches()
         setupAutoRefreshUser()
         loadMyStatus()
-      }
-      function clearAuthAndRedirect() {
-          try { if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null } } catch {}
-          try { if (state.socket) { state.socket.disconnect(); state.socket = null } } catch {}
-          if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
-          state.token = null; state.user = null
-          localStorage.removeItem('fish_token');
-          localStorage.removeItem('fish_user');
-          location.href = '/login.html'
-      }
-      async function refreshRealtimeUserData(options = {}) {
-          const { catches = false, activity = false, vessels = false, dashboard = false } = options
-          const tasks = []
-          if (catches || state.currentModule === 'my_catches') tasks.push(loadMyCatches())
-          if (activity || state.currentModule === 'activity') tasks.push(loadMyActivity())
-          if (vessels || state.currentModule === 'vessels' || state.currentModule === 'catch') tasks.push(loadVessels())
-          if (dashboard || state.currentModule === 'dashboard') {
-            tasks.push(Promise.resolve().then(() => refreshDashboard()))
-            tasks.push(Promise.resolve().then(() => updateDashboardMap()))
-          }
-          await Promise.all(tasks)
       }
       function logout(){
           try {
@@ -861,7 +795,12 @@
               }).catch(() => {})
             }
           } catch {}
-          clearAuthAndRedirect()
+          try { if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null } } catch {}
+          if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
+          state.token = null; state.user = null
+          localStorage.removeItem('fish_token');
+          localStorage.removeItem('fish_user');
+          location.href = '/login.html'
         }
 
       function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -1679,8 +1618,10 @@
           const d = await r.json()
           if (!r.ok) {
             if (r.status === 401) {
-              clearAuthAndRedirect()
-              return
+              state.token = null
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              location.href = '/login.html'
             }
             throw new Error(d.error)
           }
@@ -1773,8 +1714,11 @@
           const d = await r.json()
           if (!r.ok) {
             if (r.status === 401) {
-              clearAuthAndRedirect()
-              return
+              // Token invalid, clear it
+              state.token = null
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              location.href = '/login.html'
             }
             return
           }

@@ -1,9 +1,9 @@
 {
   "version": 2,
-  "framework": null,
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.js" },
-    { "source": "/(.*)", "destination": "/public/$1" }
+  "builds": [
+    { "src": "server.js", "use": "@vercel/node" }
   ],
-  "regions": ["sfo1"]
+  "routes": [
+    { "src": "/(.*)", "dest": "server.js" }
+  ]
 }

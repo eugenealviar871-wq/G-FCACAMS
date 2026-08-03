@@ -16,9 +16,6 @@
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/config.js"></script>
-    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root {
         --primary: #0077B6; /* Ocean Blue */
@@ -1418,91 +1415,41 @@
         showAdminModule('mod_zones')
       }
 
-      function scheduleRealtimeAdminRefresh(options = {}) {
-        const { includeActivity = false, includeVessels = false } = options
-        window._rtAdminRefreshFlags = window._rtAdminRefreshFlags || { includeActivity: false, includeVessels: false }
-        window._rtAdminRefreshFlags.includeActivity = window._rtAdminRefreshFlags.includeActivity || includeActivity
-        window._rtAdminRefreshFlags.includeVessels = window._rtAdminRefreshFlags.includeVessels || includeVessels
-        if (window._rtAdminRefreshTimer) return
-        window._rtAdminRefreshTimer = setTimeout(async () => {
-          const flags = window._rtAdminRefreshFlags || { includeActivity: false, includeVessels: false }
-          window._rtAdminRefreshTimer = null
-          window._rtAdminRefreshFlags = { includeActivity: false, includeVessels: false }
-          try { await loadData() } catch {}
-          if (flags.includeActivity || state.currentModule === 'mod_activity') {
-            try { await loadActivity() } catch {}
-          }
-          if (flags.includeVessels || state.currentModule === 'mod_vessels') {
-            try { await loadVesselsAdmin() } catch {}
-          }
-        }, 250)
-      }
       function ensureLive(force) {
-        if (window._socket && !force) return
-        if (window._socket) { window._socket.disconnect(); window._socket = null }
+        if (window._liveES && !force) {
+           if (window._liveES.readyState !== 2) return 
+           window._liveES.close()
+        }
+        if (window._liveES) { window._liveES.close(); window._liveES = null }
         
-        console.log('Connecting to Socket.IO...')
-        window._socket = io()
+        console.log('Connecting to live stream...')
+        window._liveES = new EventSource('/api/admin/live?token='+encodeURIComponent(state.token))
         
-        window._socket.on('connect', () => console.log('Socket.IO connected'))
+        window._liveES.onopen = () => console.log('Live stream connected')
         
-        window._socket.on('disconnect', () => {
-          console.log('Socket.IO disconnected, reconnecting...')
-          setTimeout(() => ensureLive(true), 5000)
-        })
+        window._liveES.onerror = function(e) {
+          console.log('Live stream error, closing', e)
+          if (window._liveES) { window._liveES.close(); window._liveES = null }
+          // Retry after 5s
+          setTimeout(() => ensureLive(), 5000)
+        }
         
-        window._socket.on('error', (err) => {
-          console.error('Socket.IO error:', err)
-        })
-        
-        window._socket.on('catch', () => {
-          scheduleRealtimeAdminRefresh({ includeVessels: state.currentModule === 'mod_vessels' })
-        })
-        
-        window._socket.on('alert', () => {
-          try { playNotificationSound() } catch {}
-          scheduleRealtimeAdminRefresh()
-        })
-
-        window._socket.on('activity', () => {
-          scheduleRealtimeAdminRefresh({ includeActivity: true })
-        })
-
-        window._socket.on('vessel', () => {
-          scheduleRealtimeAdminRefresh({ includeVessels: true })
-        })
-
-        window._socket.on('user', () => {
-          scheduleRealtimeAdminRefresh()
-        })
-
-        window._socket.on('protectedZone', () => {
-          scheduleRealtimeAdminRefresh()
-        })
-
-        window._socket.on('sync', (payload) => {
-          scheduleRealtimeAdminRefresh({
-            includeActivity: payload && payload.entity === 'activity',
-            includeVessels: payload && payload.entity === 'vessel'
-          })
-        })
-        
-        window._socket.on('status', (p) => {
+        window._liveES.onmessage = (ev) => {
           try {
-            if (p && p.userId != null) {
+            const p = JSON.parse(ev.data)
+            if (p && p.type === 'catch') addCatchRow(p.item)
+            else if (p && p.type === 'alert') {
+              addAlertRow(p.item)
+              playNotificationSound()
+            }
+            else if (p && p.type === 'status' && p.userId != null) {
               applyStatusEvent(p)
               if (state.currentModule === 'mod_map') {
                 const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
                 setUserMapStatus(`${n} active user(s)`)
               }
             }
-          } catch {}
-          scheduleRealtimeAdminRefresh()
-        })
-        
-        window._socket.on('track', (p) => {
-          try {
-            if (p && p.type === 'track_stop' && p.userId != null) {
+            else if (p && p.type === 'track_stop' && p.userId != null) {
               const uid = String(p.userId)
               const np = normalizeTrackPoint({ ...p, active: false, recordedAt: p.at || p.recordedAt })
               if (np) {
@@ -1517,7 +1464,8 @@
                 const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
                 setUserMapStatus(`${n} active user(s)`)
               }
-            } else {
+            }
+            else {
               const np = normalizeTrackPoint(p)
               if (np) {
                 if (!state.latestLocations) state.latestLocations = new Map()
@@ -1530,7 +1478,7 @@
               }
             }
           } catch {}
-        })
+        }
       }
       function addCatchRow(c) {
         const ct = document.getElementById('catches')

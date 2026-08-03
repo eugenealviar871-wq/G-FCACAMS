@@ -1,5 +1,0 @@
-// Supabase configuration
-window.SUPABASE_CONFIG = {
-  url: 'YOUR_SUPABASE_URL', // Replace with your actual Supabase URL (e.g., 'https://your-project-id.supabase.co')
-  anonKey: 'YOUR_SUPABASE_ANON_KEY' // Replace with your actual Supabase anon key
-};

@@ -22,5 +22,8 @@
     "nodemailer": "^6.9.11",
     "socket.io": "^4.8.3",
     "web-push": "^3.6.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }

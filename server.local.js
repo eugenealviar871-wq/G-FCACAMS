@@ -13,32 +13,11 @@ const exifr = require('exifr')
 const nodemailer = require('nodemailer')
 const webpush = require('web-push')
 const os = require('os')
-const http = require('http')
-const { Server } = require('socket.io')
 
 const app = express()
 app.use(cors())
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: true }))
-
-// Socket.IO setup
-let io = null
-function setupSocketIO(server) {
-  io = new Server(server, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
-    }
-  })
-
-  io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id)
-
-    socket.on('disconnect', () => {
-      console.log('Client disconnected:', socket.id)
-    })
-  })
-}
 
 process.on('unhandledRejection', (e) => { try { console.error('unhandledRejection', e) } catch {} })
 process.on('uncaughtException', (e) => { try { console.error('uncaughtException', e) } catch {} })
@@ -477,9 +456,7 @@ app.post('/api/vessels', auth(), async (req, res) => {
     updatedAt: new Date().toISOString()
   }
   vesselsDb.get('vessels').push(vessel).write()
-  const normalized = normalizeVesselRecord(vessel)
-  broadcastVessel(normalized)
-  res.json(normalized)
+  res.json(normalizeVesselRecord(vessel))
 })
 
 app.patch('/api/vessels/:id', auth(), async (req, res) => {
@@ -517,9 +494,7 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
     }).write()
   })
 
-  const normalized = normalizeVesselRecord({ ...existing, vessel_registration_number, vessel_name, owner_name, barangay, updatedAt })
-  broadcastVessel(normalized)
-  res.json(normalized)
+  res.json(normalizeVesselRecord({ ...existing, vessel_registration_number, vessel_name, owner_name, barangay, updatedAt }))
 })
 
 app.delete('/api/vessels/:id', auth('admin'), async (req, res) => {
@@ -531,7 +506,6 @@ app.delete('/api/vessels/:id', auth('admin'), async (req, res) => {
     if (String(c.vesselId || '') !== id) return
     catchesDb.get('catches').find({ id: c.id }).assign({ vesselId: null }).write()
   })
-  broadcastSync({ type: 'sync', entity: 'vessel', action: 'delete', id })
   res.json({ ok: true })
 })
 
@@ -640,7 +614,7 @@ app.get('/api/catches', auth('admin'), async (req, res) => {
 
 app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
-  const allowed = ['species','weightKg','lengthCm','gear','note','status','adminNote']
+  const allowed = ['species','weightKg','lengthCm','gear','note']
   const updates = {}
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k] })
   if (req.body.vesselId !== undefined) {
@@ -658,19 +632,13 @@ app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
     }
   }
   const exists = catchesDb.get('catches').find({ id }).value(); if (!exists) return res.status(404).json({ error: 'Not found' })
-  catchesDb.get('catches').find({ id }).assign(updates).write()
-  const updatedCatch = catchesDb.get('catches').find({ id }).value()
-  const enriched = enrichCatchWithVesselLocal(updatedCatch)
-  broadcastCatch(enriched)
-  res.json({ ok: true })
+  catchesDb.get('catches').find({ id }).assign(updates).write(); res.json({ ok: true })
 })
 
 app.delete('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
   const exists = catchesDb.get('catches').find({ id }).value(); if (!exists) return res.status(404).json({ error: 'Not found' })
-  catchesDb.set('catches', catchesDb.get('catches').filter(c => c.id !== id).value()).write()
-  broadcastSync({ type: 'sync', entity: 'catch', action: 'delete', id })
-  res.json({ ok: true })
+  catchesDb.set('catches', catchesDb.get('catches').filter(c => c.id !== id).value()).write(); res.json({ ok: true })
 })
 
 app.post('/api/track', auth(), async (req, res) => {
@@ -843,9 +811,7 @@ app.post('/api/admin/users', auth('admin'), async (req, res) => {
   const roleSafe = ['admin','inspector','fisher','researcher'].includes((role||'').toLowerCase()) ? role.toLowerCase() : 'fisher'
   const user = { id: nanoid(), name, email, pass: bcrypt.hashSync(password, 10), role: roleSafe, createdAt: new Date().toISOString() }
   usersDb.get('users').push(user).write()
-  const userWithoutPass = { id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt }
-  broadcastUser(userWithoutPass)
-  res.json(userWithoutPass)
+  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
 })
 
 app.patch('/api/admin/users/:id/role', auth('admin'), async (req, res) => {
@@ -856,9 +822,6 @@ app.patch('/api/admin/users/:id/role', auth('admin'), async (req, res) => {
   const user = usersDb.get('users').find({ id }).value()
   if (!user) return res.status(404).json({ error: 'User not found' })
   usersDb.get('users').find({ id }).assign({ role: role.toLowerCase() }).write()
-  const updatedUser = usersDb.get('users').find({ id }).value()
-  const userWithoutPass = { id: updatedUser.id, name: updatedUser.name, email: updatedUser.email, role: updatedUser.role, createdAt: updatedUser.createdAt }
-  broadcastUser(userWithoutPass)
   res.json({ ok: true })
 })
 
@@ -876,7 +839,6 @@ app.delete('/api/admin/users/:id', auth('admin'), async (req, res) => {
   alertsDb.set('alerts', alertsDb.get('alerts').filter(a => a.userId !== id).value()).write()
   imagesDb.set('images', imagesDb.get('images').filter(i => !catchIds.includes(i.catch_id)).value()).write()
   pushDb.set('subscriptions', pushDb.get('subscriptions').filter(s => s.userId !== id).value()).write()
-  broadcastSync({ type: 'sync', entity: 'user', action: 'delete', id })
   res.json({ ok: true })
 })
 
@@ -1077,7 +1039,6 @@ app.delete('/api/admin/alerts/:id', auth('admin'), (req, res) => {
   const exists = alertsDb.get('alerts').find({ id }).value()
   if (!exists) return res.status(404).json({ error: 'Not found' })
   alertsDb.set('alerts', alertsDb.get('alerts').filter(a => a.id !== id).value()).write()
-  broadcastSync({ type: 'sync', entity: 'alert', action: 'delete', id })
   res.json({ ok: true })
 })
 app.post('/api/alerts', auth(), (req, res) => {
@@ -1313,55 +1274,22 @@ app.get('/api/admin/live', auth(['admin','inspector']), (req, res) => {
 function broadcastTrack(point) {
   const data = `data: ${JSON.stringify(point)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Track):', e.message) } })
-  if (io) io.emit('track', point)
 }
 function broadcastStatus(payload) {
   const data = `data: ${JSON.stringify(payload)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Status):', e.message) } })
-  if (io) io.emit('status', payload)
 }
 function broadcastCatch(item) {
   const u = usersDb.get('users').find({ id: item.userId }).value()
   const payload = { type: 'catch', item: { ...item, user: u ? { id: u.id, name: u.name, email: u.email } : null } }
   const data = `data: ${JSON.stringify(payload)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Catch):', e.message) } })
-  if (io) io.emit('catch', payload)
 }
 function broadcastAlert(a) {
   const u = usersDb.get('users').find({ id: a.userId }).value()
   const payload = { type: 'alert', item: { ...a, user: u ? { id: u.id, name: u.name, email: u.email } : null } }
   const data = `data: ${JSON.stringify(payload)}\n\n`
   sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Alert):', e.message) } })
-  if (io) io.emit('alert', payload)
-}
-function broadcastUser(user) {
-  const payload = { type: 'user', item: user }
-  const data = `data: ${JSON.stringify(payload)}\n\n`
-  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (User):', e.message) } })
-  if (io) io.emit('user', payload)
-}
-function broadcastVessel(vessel) {
-  const payload = { type: 'vessel', item: vessel }
-  const data = `data: ${JSON.stringify(payload)}\n\n`
-  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Vessel):', e.message) } })
-  if (io) io.emit('vessel', payload)
-}
-function broadcastProtectedZone(zone) {
-  const payload = { type: 'protectedZone', item: zone }
-  const data = `data: ${JSON.stringify(payload)}\n\n`
-  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (ProtectedZone):', e.message) } })
-  if (io) io.emit('protectedZone', payload)
-}
-function broadcastActivity(activity) {
-  const payload = { type: 'activity', item: activity }
-  const data = `data: ${JSON.stringify(payload)}\n\n`
-  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Activity):', e.message) } })
-  if (io) io.emit('activity', payload)
-}
-function broadcastSync(payload) {
-  const data = `data: ${JSON.stringify(payload)}\n\n`
-  sseClients.forEach(res => { try { res.write(data) } catch (e) { console.error('SSE Write Error (Sync):', e.message) } })
-  if (io) io.emit('sync', payload)
 }
 
 app.get('/', (req, res) => {
@@ -1375,6 +1303,7 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'))
 })
 
+const http = require('http')
 const BASE_PORT = parseInt(process.env.PORT || '3000', 10)
 let CURRENT_PORT = BASE_PORT
 function getLANIPs() {
@@ -1387,7 +1316,6 @@ function getLANIPs() {
 }
 function startServer(p) {
   const server = http.createServer(app)
-  setupSocketIO(server)
   server.on('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
       const next = p + 1
@@ -1406,8 +1334,10 @@ function startServer(p) {
 }
 if (IS_SERVERLESS) {
   module.exports = app
-} else {
+} else if (require.main === module) {
   startServer(BASE_PORT)
+} else {
+  module.exports = app
 }
 app.get('/api/public/hostinfo', (req, res) => {
   const ips = getLANIPs()
@@ -1442,7 +1372,6 @@ app.post('/api/activity_logs', auth(), (req, res) => {
   const cat = ACTIVITY_CATEGORIES[t] || (category || null)
   const log = { id: nanoid(), user_id: req.user.id, type: t, category: cat, location: { lat: parseFloat(lat), lng: parseFloat(lng) }, geom_line: Array.isArray(line) ? line : null, details: details || null, created_at: new Date().toISOString() }
   activityDb.get('activity_logs').push(log).write()
-  broadcastActivity(log)
   res.json(log)
 })
 app.post('/api/activity_logs/upload', auth(), upload.single('photo'), async (req, res) => {
@@ -1492,7 +1421,6 @@ app.post('/api/activity_logs/upload', auth(), upload.single('photo'), async (req
       const img = { id: nanoid(), activity_id: log.id, bucket_key: photoUrl, exif: exifFull || null, created_at: new Date().toISOString() }
       imagesDb.get('images').push(img).write()
     }
-    broadcastActivity(log)
     res.json(log)
   } catch (e) {
     res.status(500).json({ error: 'Upload failed' })
@@ -1526,7 +1454,6 @@ app.delete('/api/activity_logs/:id', auth(['admin','inspector']), (req, res) => 
   const exists = activityDb.get('activity_logs').find({ id }).value()
   if (!exists) return res.status(404).json({ error: 'Not found' })
   activityDb.set('activity_logs', activityDb.get('activity_logs').filter(a => a.id !== id).value()).write()
-  broadcastSync({ type: 'sync', entity: 'activity', action: 'delete', id })
   res.json({ ok: true })
 })
 app.get('/api/admin/activity_insights', auth(['admin','inspector']), (req, res) => {
@@ -1576,9 +1503,7 @@ app.post('/api/admin/protected_areas', auth('admin'), (req, res) => {
   const { name, geom, rules } = req.body
   if (!name || !geom) return res.status(400).json({ error: 'Missing fields' })
   const pa = { id: nanoid(), name, geom, rules: rules || null, created_at: new Date().toISOString() }
-  protectedAreasDb.get('protected_areas').push(pa).write()
-  broadcastProtectedZone(pa)
-  res.json(pa)
+  protectedAreasDb.get('protected_areas').push(pa).write(); res.json(pa)
 })
 app.patch('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
   const id = req.params.id
@@ -1589,16 +1514,13 @@ app.patch('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
     const ok = geom && geom.type === 'Polygon' && Array.isArray(geom.coordinates) && Array.isArray(geom.coordinates[0]) && geom.coordinates[0].length >= 4
     if (!ok) return res.status(400).json({ error: 'Invalid polygon' })
   }
-  const next = { ...pa, name: name || pa.name, geom: geom || pa.geom, rules: rules !== undefined ? rules : pa.rules }
+  const next = { name: name || pa.name, geom: geom || pa.geom, rules: rules !== undefined ? rules : pa.rules }
   protectedAreasDb.get('protected_areas').find({ id }).assign(next).write()
-  broadcastProtectedZone(next)
   res.json({ ok: true })
 })
 app.delete('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
   const id = req.params.id
-  protectedAreasDb.set('protected_areas', protectedAreasDb.get('protected_areas').filter(p => p.id !== id).value()).write()
-  broadcastSync({ type: 'sync', entity: 'protectedZone', action: 'delete', id })
-  res.json({ ok: true })
+  protectedAreasDb.set('protected_areas', protectedAreasDb.get('protected_areas').filter(p => p.id !== id).value()).write(); res.json({ ok: true })
 })
 
 app.use((err, req, res, next) => {
