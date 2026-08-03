@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "build": "echo Build completed",
+    "build": "echo 'Vercel build completed'",
     "migrate": "node scripts/migrate_to_supabase.js"
   },
   "dependencies": {
