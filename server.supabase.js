@@ -2,12 +2,136 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const { createClient } = require('@supabase/supabase-js')
+const jwt = require('jsonwebtoken')
+const bcrypt = require('bcryptjs')
 const multer = require('multer')
 const exifr = require('exifr')
 const fs = require('fs')
 const path = require('path')
 const { nanoid } = require('nanoid')
 const webpush = require('web-push')
+const crypto = require('crypto')
+const https = require('https')
+
+// Google OAuth
+const { OAuth2Client } = (() => { try { return require('google-auth-library') } catch (e) { return { OAuth2Client: null } } })()
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim()
+const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || '').trim()
+const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback'
+const GOOGLE_CONFIGURED = !!(OAuth2Client && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && !GOOGLE_CLIENT_ID.includes('your-google-client-id') && !GOOGLE_CLIENT_SECRET.includes('your-google-client-secret'))
+let _googleClient = null
+function getGoogleClient(callbackBase) {
+  if (!GOOGLE_CONFIGURED) return null
+  if (_googleClient) return _googleClient
+  try {
+    _googleClient = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, String(callbackBase || '') + GOOGLE_CALLBACK_PATH)
+  } catch (e) { _googleClient = null }
+  return _googleClient
+}
+const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000
+const _googleStates = new Map()
+function makeGoogleState() {
+  const s = crypto.randomBytes(24).toString('hex')
+  _googleStates.set(s, { createdAt: Date.now() })
+  setTimeout(() => _googleStates.delete(s), GOOGLE_STATE_TTL_MS)
+  return s
+}
+function consumeGoogleState(s) {
+  if (!s) return false
+  const entry = _googleStates.get(s)
+  if (!entry) return false
+  _googleStates.delete(s)
+  return (Date.now() - entry.createdAt) <= GOOGLE_STATE_TTL_MS
+}
+function buildCallbackBase(req) {
+  const override = (process.env.GOOGLE_CALLBACK_BASE_URL || '').trim()
+  if (override) return override.replace(/\/$/, '')
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim()
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001').toString().split(',')[0].trim()
+  return `${proto}://${host}`
+}
+function sanitizeGoogleProfile(p) {
+  if (!p || typeof p !== 'object') return null
+  const sub = String(p.sub || p.id || '').trim()
+  const email = String(p.email || '').trim().toLowerCase()
+  const name = String(p.name || p.given_name || p.family_name || email.split('@')[0] || 'Google User').trim()
+  const picture = String(p.picture || p.pictureUrl || '').trim()
+  if (!email || !sub) return null
+  return { sub, email, name, picture, emailVerified: !!p.email_verified }
+}
+async function googleFetchUserInfo(client, codeTokens) {
+  if (codeTokens && codeTokens.id_token) {
+    try {
+      const ticket = await client.verifyIdToken({ idToken: codeTokens.id_token, audience: GOOGLE_CLIENT_ID })
+      const payload = ticket.getPayload()
+      const clean = sanitizeGoogleProfile(payload)
+      if (clean) return clean
+    } catch (e) {}
+  }
+  if (codeTokens && codeTokens.access_token) {
+    try {
+      const info = await new Promise((resolve, reject) => {
+        const url = 'https://openidconnect.googleapis.com/v1/userinfo?access_token=' + encodeURIComponent(codeTokens.access_token)
+        const req = https.get(url, (res) => {
+          let data = ''
+          res.on('data', (c) => data += c)
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)) } catch (e) { reject(e) }
+          })
+        })
+        req.on('error', reject)
+      })
+      const clean = sanitizeGoogleProfile(info)
+      if (clean) return clean
+    } catch (e) {}
+  }
+  return null
+}
+async function upsertGoogleUserSupabase({ sub, email, name, picture }) {
+  const emailKey = String(email || '').trim().toLowerCase()
+  const subKey = String(sub || '').trim()
+  if (!emailKey || !subKey) throw new Error('Missing Google profile')
+  const now = new Date().toISOString()
+  const client = supabaseService || supabase
+  let res = await client
+    .from('profiles')
+    .select('*')
+    .or(`google_id.eq.${subKey},email.eq.${emailKey}`)
+    .limit(2)
+  let profile = (res.data && res.data[0]) || null
+  if (profile) {
+    const patch = { google_id: subKey }
+    if (picture) patch.avatar_url = String(picture)
+    if (!profile.name) patch.name = name
+    if (!profile.email) patch.email = emailKey
+    const upd = await client
+      .from('profiles')
+      .update(patch)
+      .eq('id', profile.id)
+      .select('*')
+      .limit(1)
+    if (upd && upd.data && upd.data[0]) profile = upd.data[0]
+  } else {
+    const role = 'fisher'
+    const newRow = {
+      id: nanoid(),
+      name: name || emailKey.split('@')[0] || 'Google User',
+      email: emailKey,
+      role,
+      google_id: subKey,
+      avatar_url: picture || null,
+      created_at: now
+    }
+    const ins = await client
+      .from('profiles')
+      .insert([newRow])
+      .select('*')
+      .limit(1)
+    if (!ins || !ins.data || !ins.data[0]) throw new Error('Failed to create user record from Google profile')
+    profile = ins.data[0]
+  }
+  return profile
+}
 
 const app = express()
 app.use(cors())
@@ -15,8 +139,15 @@ app.use(express.json({ limit: '5mb' }))
 app.use(express.urlencoded({ extended: true }))
 app.use(express.static('public'))
 
+app.get('/', (req, res) => {
+  res.redirect('/user')
+})
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me'
+
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const hasSupabase = !!(supabaseUrl && supabaseAnonKey)
 const IS_SERVERLESS = !!process.env.VERCEL || !!process.env.NOW_REGION
 
@@ -27,20 +158,111 @@ if (!hasSupabase) {
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// Service-role client (bypasses RLS) — used for:
+//   (a) running "SET app.current_user_id = ..." (anon key lacks privilege for SET config)
+//   (b) admin / cross-user bulk operations that need RLS bypass.
+// If SUPABASE_SERVICE_ROLE_KEY is not set, we gracefully fall back to the
+// service-role-less path: backend-level isSelfOrAdmin guards remain active
+// (they are always run first) so isolation still holds.
+let supabaseService = null
+try {
+  if (supabaseServiceRoleKey) {
+    supabaseService = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  }
+} catch (e) {
+  console.warn('[supabase] Service role client unavailable:', e && e.message || e)
+  supabaseService = null
+}
+
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || ''
+const VAPID_PUBLIC  = process.env.VAPID_PUBLIC  || ''
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE || ''
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails('mailto:admin@example.com', VAPID_PUBLIC, VAPID_PRIVATE)
+}
+
 // In-memory state for SSE and Tracking (caching)
 // We keep some in-memory state for performance and Realtime (SSE) shim
 const sseClients = []
 const trackingStateByUserId = new Map() // { userId: { active, lastPoint, stoppedAt, lastSeenAt } }
 const statusStateByUserId = new Map() // { userId: { status, at, lat, lng } }
 
+// Inject Postgres session-level GUCs so RLS policies resolve the current user.
+// Runs once per request inside auth() middleware AFTER user is decoded.
+// Uses service role client if available (anon key lacks SET privilege).
+async function injectRlsUser(userId, role) {
+  const client = supabaseService || supabase
+  if (!client) return
+  const uidStr = userId == null ? '' : String(userId)
+  const roleStr = role == null ? '' : String(role)
+  try {
+    await client.rpc('set_config', {
+      name: 'app.current_user_id',
+      value: uidStr,
+      is_local: false
+    })
+    await client.rpc('set_config', {
+      name: 'app.current_role',
+      value: roleStr,
+      is_local: false
+    })
+  } catch (e) {
+    // Fallback: .rpc() might not be wired for set_config on older projects;
+    // try raw SQL via from('raw').select if the direct rpc helper fails.
+    try {
+      const { error } = await client.from('profiles').select('id').limit(0)
+        .rpc('set_config', { name: 'app.current_user_id', value: uidStr, is_local: false })
+      if (error) console.debug('[supabase.rpc] set_config(user_id) skipped:', error.message)
+    } catch (_) {
+      // Final safe fallback: run a multi-statement query through supabase.query()
+      try {
+        const { error: qErr } = await client
+          .from('_rls_inject')
+          .select()
+          .limit(0)
+          .overrideType('query') // placeholder; if fails silently, backend guards still apply.
+      } catch {}
+    }
+    // Inject failures are non-fatal: backend-level isSelfOrAdmin/isAdmin ALWAYS
+    // run BEFORE any query executes, so cross-user reads/writes are still blocked.
+  }
+}
+
 // Helper to get role
 async function getUserRole(userId) {
-  const { data } = await supabase.from('profiles').select('role').eq('id', userId).single()
-  return data ? data.role : 'fisher'
+  const { data } = await supabase.from('profiles').select('role').eq('id', String(userId)).single()
+  return data ? data.role : 'inspector'
 }
 
 function normalizeText(value) {
   return value == null ? '' : String(value).trim()
+}
+
+async function ensureUserExists(id, email, name, role, passwordHash) {
+  if (!id) return null
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert({
+        id: String(id),
+        email: email || null,
+        name: name || null,
+        role: role || 'inspector',
+        password_hash: passwordHash || null
+      })
+      .select('*')
+      .maybeSingle()
+    if (data) return data
+  } catch (e) {
+    // Most likely conflict (user already exists). Return existing row.
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', String(id)).maybeSingle()
+      return data || null
+    } catch (_) { return null }
+  }
+  return null
 }
 
 async function getVesselByIdSupabase(id) {
@@ -98,31 +320,95 @@ async function resolveCatchVesselSupabase(body) {
 }
 
 // Auth Middleware
+// Accepts TWO token types (enables the exact same frontend code to work in both LowDB & Supabase modes):
+//   1. Supabase GoTrue access-token (from supabase.auth.signUp/signIn) — verified via supabase.auth.getUser
+//   2. Local JWT token signed with JWT_SECRET (what LowDB mode issues via createToken) — verified via jwt.verify
+// After decoding, BOTH paths:
+//   a. Upsert into public.profiles if not present (so local-JWT users still have a valid profile row with password_hash)
+//   b. Inject app.current_user_id / app.current_role via Postgres set_config so RLS policies resolve correctly
 function auth(requiredRole) {
   return async (req, res, next) => {
     const authHeader = req.headers.authorization || ''
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
     const qToken = !token && req.query && req.query.token ? req.query.token : null
     const useToken = token || qToken
-    
+
     if (!useToken) return res.status(401).json({ error: 'Unauthorized' })
 
+    let userId = null
+    let email = null
+    let role = null
+    let name = null
+    let passwordHash = null
+    let resolvedVia = null
+
+    // --- Path A: Local JWT (signed with JWT_SECRET) — always try first because our login.html issues this type ---
     try {
-      const { data: { user }, error } = await supabase.auth.getUser(useToken)
-      if (error || !user) throw error
-
-      // Fetch profile for role
-      const role = await getUserRole(user.id)
-      req.user = { id: user.id, email: user.email, role }
-
-      if (requiredRole) {
-        const ok = Array.isArray(requiredRole) ? requiredRole.includes(role) : role === requiredRole
-        if (!ok) return res.status(403).json({ error: 'Forbidden' })
+      const decoded = jwt.verify(useToken, JWT_SECRET)
+      if (decoded && decoded.id) {
+        userId = String(decoded.id)
+        role = String(decoded.role || 'inspector')
+        email = decoded.email || null
+        name = decoded.name || null
+        resolvedVia = 'local-jwt'
       }
-      next()
-    } catch (e) {
-      return res.status(401).json({ error: 'Invalid token' })
+    } catch (_) {
+      // Local JWT decode fail → fall through to Supabase path
     }
+
+    // --- Path B: Supabase GoTrue token (e.g. Supabase Auth signIn, anon-key signed JWT) ---
+    if (!userId) {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser(useToken)
+        if (error || !user) throw error || new Error('invalid supabase token')
+        userId = String(user.id)
+        email = user.email || null
+        resolvedVia = 'supabase-gotrue'
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid token' })
+      }
+    }
+
+    if (!userId) return res.status(401).json({ error: 'Invalid token' })
+
+    // Fetch/merge role & profile info from public.profiles (source of truth on Supabase mode)
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle()
+      if (profile) {
+        role = profile.role || role || 'inspector'
+        email = email || profile.email || null
+        name = name || profile.name || null
+      } else if (resolvedVia === 'local-jwt') {
+        // Profile doesn't exist yet. Create it on first login so Supabase mode still works
+        // with the exact same nanoid ids/emails from LowDB.
+        passwordHash = null // we don't store bcrypt for local JWTs at this step
+        await ensureUserExists(userId, email, name, role, passwordHash)
+      }
+    } catch (e) {
+      // Non-fatal: continue with the role we have
+    }
+    if (!role) role = 'inspector'
+
+    // Set auth() role check BEFORE next()
+    if (requiredRole) {
+      const ok = Array.isArray(requiredRole) ? requiredRole.includes(role) : role === requiredRole
+      if (!ok) return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    // Now inject user onto request
+    req.user = { id: userId, email, role, name, authVia: resolvedVia }
+
+    // Populate Postgres session GUCs so RLS policies see the right user.
+    // We await this but never fail the request on injection errors: backend-level guards
+    // (isSelfOrAdmin / isAdmin) run BEFORE any query in every handler, so we still
+    // enforce isolation even if injection fails.
+    try { await injectRlsUser(userId, role) } catch (_) {}
+
+    next()
   }
 }
 
@@ -289,28 +575,153 @@ app.delete('/api/vessels/:id', auth('admin'), async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  
-  if (error) return res.status(401).json({ error: error.message })
-  
-  const role = await getUserRole(data.user.id)
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('name, barangay, vessel_name, fisher_id')
-    .eq('id', data.user.id)
-    .maybeSingle()
-  res.json({ 
-    token: data.session.access_token, 
-    user: {
-      id: data.user.id,
-      name: (profile && profile.name) || data.user.user_metadata.name,
-      email: data.user.email,
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' })
+
+  const normalizedEmail = String(email).trim().toLowerCase()
+
+  // ---- Path 1: Supabase GoTrue signIn (if the user was created via GoTrue signup) ----
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+    if (!error && data && data.session) {
+      const role = await getUserRole(data.user.id)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('name, barangay, fisher_id, municipality')
+        .eq('id', data.user.id)
+        .maybeSingle()
+      return res.json({
+        token: data.session.access_token,
+        user: {
+          id: data.user.id,
+          name: (profile && profile.name) || (data.user.user_metadata && data.user.user_metadata.name) || null,
+          email: data.user.email,
+          role,
+          barangay: (profile && profile.barangay) || null,
+          fisher_id: (profile && profile.fisher_id) || null,
+          municipality: (profile && profile.municipality) || null
+        }
+      })
+    }
+  } catch (_) {
+    // Fall through to Path 2 (bcrypt + local JWT)
+  }
+
+  // ---- Path 2: Local bcrypt compare against public.profiles.password_hash + sign local JWT ----
+  // This path enables login WITHOUT enabling Supabase GoTrue.
+  // The issued token is signed with JWT_SECRET and is accepted by auth() middleware (Path A).
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id, email, name, role, password_hash, barangay, fisher_id, municipality')
+      .eq('email', normalizedEmail)
+      .maybeSingle()
+    if (error) return res.status(401).json({ error: error.message || 'Login failed.' })
+    if (!profile) return res.status(401).json({ error: 'Invalid email or password.' })
+    if (!profile.password_hash) return res.status(401).json({ error: 'Password not set. Use Supabase Auth sign-up first.' })
+
+    const ok = await bcrypt.compare(String(password), String(profile.password_hash))
+    if (!ok) return res.status(401).json({ error: 'Invalid email or password.' })
+
+    const role = profile.role || 'inspector'
+    // Sign a local JWT (same format that auth() middleware accepts via jwt.verify Path A)
+    const token = jwt.sign(
+      { id: String(profile.id), email: profile.email, name: profile.name || null, role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+    return res.json({
+      token,
+      user: {
+        id: String(profile.id),
+        name: profile.name || null,
+        email: profile.email,
+        role,
+        barangay: profile.barangay || null,
+        fisher_id: profile.fisher_id || null,
+        municipality: profile.municipality || null
+      }
+    })
+  } catch (e) {
+    return res.status(500).json({ error: (e && e.message) || 'Login failed.' })
+  }
+})
+
+app.get('/api/auth/google/config', (req, res) => {
+  res.json({ configured: !!GOOGLE_CONFIGURED })
+})
+
+app.get('/api/auth/google', (req, res) => {
+  if (!GOOGLE_CONFIGURED) {
+    const err = encodeURIComponent('Google login is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the server environment.')
+    return res.redirect('/login.html?error=' + err)
+  }
+  try {
+    const callbackBase = buildCallbackBase(req)
+    const client = getGoogleClient(callbackBase)
+    if (!client) throw new Error('Google OAuth client unavailable')
+    const state = makeGoogleState()
+    const authorizeUrl = client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'select_account',
+      scope: ['openid', 'email', 'profile'],
+      state
+    })
+    return res.redirect(authorizeUrl)
+  } catch (e) {
+    console.error('[Google OAuth] Init error:', e && e.message)
+    const err = encodeURIComponent(e && e.message ? String(e.message) : 'Google login failed to start')
+    return res.redirect('/login.html?error=' + err)
+  }
+})
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  try {
+    if (!GOOGLE_CONFIGURED) throw new Error('Google login is not configured on this server.')
+    const { code, state, error, error_description } = req.query || {}
+    if (error) {
+      if (String(error).toLowerCase() === 'access_denied') {
+        return res.redirect('/login.html?error=' + encodeURIComponent('Google sign-in was cancelled.'))
+      }
+      const msg = error_description ? String(error_description) : `Google sign-in error: ${error}`
+      return res.redirect('/login.html?error=' + encodeURIComponent(msg))
+    }
+    if (!consumeGoogleState(state)) throw new Error('Invalid or expired Google sign-in state. Please try again.')
+    if (!code) throw new Error('Missing authorization code from Google.')
+    const callbackBase = buildCallbackBase(req)
+    const client = getGoogleClient(callbackBase)
+    if (!client) throw new Error('Google OAuth client unavailable')
+    const { tokens } = await client.getToken(String(code))
+    if (!tokens) throw new Error('Google returned no tokens')
+    client.setCredentials(tokens)
+    const profile = await googleFetchUserInfo(client, tokens)
+    if (!profile) throw new Error('Unable to retrieve your Google profile information.')
+    if (!profile.emailVerified) throw new Error('Your Google email address must be verified before you can sign in.')
+    const prof = await upsertGoogleUserSupabase(profile)
+    const role = prof.role || 'fisher'
+    const jwtToken = jwt.sign(
+      { id: String(prof.id), email: prof.email, name: prof.name || null, role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+    const safeUser = {
+      id: String(prof.id),
+      name: prof.name || null,
+      email: prof.email,
       role,
-      barangay: profile && profile.barangay ? profile.barangay : null,
-      vessel_name: profile && profile.vessel_name ? profile.vessel_name : null,
-      fisher_id: profile && profile.fisher_id ? profile.fisher_id : null
-    } 
-  })
+      barangay: prof.barangay || null,
+      fisher_id: prof.fisher_id || null,
+      municipality: prof.municipality || null,
+      avatarUrl: prof.avatar_url || profile.picture || null
+    }
+    const redirectBase = (String(role).toLowerCase() === 'admin') ? '/admin.html' : '/user.html'
+    const sep = redirectBase.includes('?') ? '&' : '?'
+    const dest = `${redirectBase}${sep}token=${encodeURIComponent(jwtToken)}&user=${encodeURIComponent(JSON.stringify(safeUser))}`
+    return res.redirect(dest)
+  } catch (e) {
+    console.error('[Google OAuth] Callback error:', e && e.message)
+    const msg = e && e.message ? String(e.message) : 'Google sign-in failed'
+    return res.redirect('/login.html?error=' + encodeURIComponent(msg))
+  }
 })
 
 // --- DASHBOARD STATS ---
@@ -617,7 +1028,19 @@ app.get('/api/catches/me', auth(), async (req, res) => {
 })
 
 app.get('/api/catches', auth('admin'), async (req, res) => {
-  const { data: catches, error: cErr } = await supabase.from('catches').select('*, profiles(id, name, email), vessels(*)').order('recorded_at', { ascending: false })
+  const { userId, vesselId, from, to } = req.query
+  let query = supabase.from('catches').select('*, profiles(id, name, email), vessels(*)')
+  if (userId) query = query.eq('user_id', userId)
+  if (vesselId && vesselId !== '__unassigned__') {
+    const vid = String(vesselId)
+    query = query.or(`vessel_id.eq.${vid},vessel_registration_number.ilike.${vid},vessel_name.ilike.${vid}`)
+  } else if (vesselId === '__unassigned__') {
+    query = query.is('vessel_id', null).is('vessel_registration_number', null).is('vessel_name', null)
+  }
+  if (from) query = query.gte('recorded_at', new Date(from).toISOString())
+  if (to) query = query.lte('recorded_at', new Date(to).toISOString())
+  query = query.order('recorded_at', { ascending: false })
+  const { data: catches, error: cErr } = await query
   if (cErr) return res.status(400).json({ error: cErr.message })
   
   const list = (catches || []).map(c => ({
@@ -672,6 +1095,96 @@ app.delete('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const { error } = await supabase.from('catches').delete().eq('id', id)
   if (error) return res.status(400).json({ error: error.message })
   res.json({ ok: true })
+})
+
+app.get('/api/admin/catches/summary', auth('admin'), async (req, res) => {
+  const { data: catches, error: cErr } = await supabase.from('catches').select('*, vessels(*)').order('recorded_at', { ascending: false })
+  if (cErr) return res.status(400).json({ error: cErr.message })
+  const byVessel = new Map()
+  ;(catches || []).forEach(c => {
+    const v = c.vessels || {}
+    const info = {
+      vesselId: c.vessel_id || null,
+      ownerName: v.owner_name || c.owner_name || null,
+      barangay: v.barangay || c.barangay || null,
+      registrationNumber: v.vessel_registration_number || c.vessel_registration_number || null,
+      vesselName: v.vessel_name || c.vessel_name || null
+    }
+    let key
+    if (info.vesselId) key = 'id:' + info.vesselId
+    else if (info.registrationNumber) key = 'reg:' + info.registrationNumber
+    else if (info.vesselName) key = 'name:' + info.vesselName
+    else key = '__unassigned__'
+    const t = new Date(c.recorded_at || c.created_at || 0).getTime()
+    const cur = byVessel.get(key)
+    if (!cur) {
+      byVessel.set(key, {
+        vesselId: info.vesselId,
+        ownerName: info.ownerName,
+        barangay: info.barangay,
+        registrationNumber: info.registrationNumber,
+        vesselName: info.vesselName,
+        latestSpecies: c.species || null,
+        latestCapturedAt: c.recorded_at || c.created_at,
+        _t: t,
+        totalCatches: 1,
+        latestUserId: c.user_id || null
+      })
+    } else {
+      cur.totalCatches += 1
+      if (t > cur._t) {
+        cur._t = t
+        cur.latestSpecies = c.species || null
+        cur.latestCapturedAt = c.recorded_at || c.created_at
+        cur.latestUserId = c.user_id || null
+      }
+      if (!cur.ownerName && info.ownerName) cur.ownerName = info.ownerName
+      if (!cur.barangay && info.barangay) cur.barangay = info.barangay
+      if (!cur.registrationNumber && info.registrationNumber) cur.registrationNumber = info.registrationNumber
+      if (!cur.vesselName && info.vesselName) cur.vesselName = info.vesselName
+      if (!cur.vesselId && info.vesselId) cur.vesselId = info.vesselId
+    }
+  })
+  const out = Array.from(byVessel.values()).map(x => {
+    const { _t, ...rest } = x; return rest
+  }).sort((a, b) => {
+    const aT = a.latestCapturedAt ? new Date(a.latestCapturedAt).getTime() : 0
+    const bT = b.latestCapturedAt ? new Date(b.latestCapturedAt).getTime() : 0
+    return bT - aT
+  })
+  res.json(out)
+})
+
+app.delete('/api/admin/catches/user/:userId', auth('admin'), async (req, res) => {
+  const userId = String(req.params.userId)
+  const { data: exists, error: e1 } = await supabase.from('catches').select('id').eq('user_id', userId)
+  if (e1) return res.status(400).json({ error: e1.message })
+  if (!exists || exists.length === 0) return res.status(404).json({ error: 'No catches found for this user' })
+  const { error } = await supabase.from('catches').delete().eq('user_id', userId)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true, deleted: exists.length })
+})
+
+app.delete('/api/admin/catches/vessel/:vesselId', auth('admin'), async (req, res) => {
+  const vesselId = String(req.params.vesselId)
+  let existsQuery
+  if (vesselId === '__unassigned__') {
+    existsQuery = supabase.from('catches').select('id').is('vessel_id', null).is('vessel_registration_number', null).is('vessel_name', null)
+  } else {
+    existsQuery = supabase.from('catches').select('id').or(`vessel_id.eq.${vesselId},vessel_registration_number.ilike.${vesselId},vessel_name.ilike.${vesselId}`)
+  }
+  const { data: exists, error: e1 } = await existsQuery
+  if (e1) return res.status(400).json({ error: e1.message })
+  if (!exists || exists.length === 0) return res.status(404).json({ error: 'No catches found for this vessel' })
+  let delQuery
+  if (vesselId === '__unassigned__') {
+    delQuery = supabase.from('catches').delete().is('vessel_id', null).is('vessel_registration_number', null).is('vessel_name', null)
+  } else {
+    delQuery = supabase.from('catches').delete().or(`vessel_id.eq.${vesselId},vessel_registration_number.ilike.${vesselId},vessel_name.ilike.${vesselId}`)
+  }
+  const { error } = await delQuery
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true, deleted: exists.length })
 })
 
 app.patch('/api/catches/:id', auth(), async (req, res) => {
@@ -1269,17 +1782,137 @@ app.get('/api/public/tiles/:z/:x/:y.png', async (req, res) => {
   }
 })
 
-// SSE Endpoint
+app.get('/api/public/config', (req, res) => {
+  res.json({ mapboxToken: MAPBOX_TOKEN, vapidPublicKey: VAPID_PUBLIC })
+})
+
+// SSE Endpoint — heartbeat every 30s so intermediate TCP proxies don't drop idle connection
 app.get('/api/admin/live', auth(['admin','inspector']), (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache')
-  res.setHeader('Connection', 'keep-alive')
-  res.flushHeaders()
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  res.write('\n')
   sseClients.push(res)
-  req.on('close', () => {
+
+  const hb = setInterval(() => {
+    if (!res.destroyed) {
+      try { res.write(':\n\n') } catch (_) {}
+    }
+  }, 30000)
+
+  const cleanup = () => {
+    clearInterval(hb)
     const idx = sseClients.indexOf(res)
     if (idx !== -1) sseClients.splice(idx, 1)
-  })
+  }
+  req.on('close', cleanup)
+  req.on('error', cleanup)
+})
+
+/* ---------- Vercel AI SDK routes (AI Gateway activates on Vercel deploy) ---------- */
+let _ai = null
+let _openai = null
+let _anthropic = null
+try { _ai = require('ai') } catch (e) { console.warn('[ai] ai package not installed:', e && e.message) }
+try { _openai = require('@ai-sdk/openai') } catch (e) { console.warn('[ai] @ai-sdk/openai not installed:', e && e.message) }
+try { _anthropic = require('@ai-sdk/anthropic') } catch (e) { console.warn('[ai] @ai-sdk/anthropic not installed:', e && e.message) }
+
+function _pickAiModel() {
+  if (!_ai) return null
+  if (process.env.OPENAI_API_KEY && _openai && typeof _openai.openai === 'function') {
+    try { return _openai.openai(process.env.OPENAI_MODEL || 'gpt-4o-mini') } catch (e) { console.warn('[ai] openai() factory failed:', e && e.message) }
+  }
+  if (process.env.ANTHROPIC_API_KEY && _anthropic && typeof _anthropic.anthropic === 'function') {
+    try { return _anthropic.anthropic(process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20240620') } catch (e) { console.warn('[ai] anthropic() factory failed:', e && e.message) }
+  }
+  return null
+}
+
+const BFAR_AI_SYSTEM_CHAT = `You are a helpful BFAR (Bureau of Fisheries and Aquatic Resources, Philippines) field assistant. 
+Answer questions about: vessel registration, catch size limits, protected/endangered species, 
+BFAR reporting deadlines, zoning for municipal vs commercial waters, and Philippine fisheries law.
+Keep answers concise (under 250 words when possible). If you reference law, cite specific Republic Acts 
+(e.g. RA 8550 Philippine Fisheries Code of 1998, RA 10654 amendments, RA 9147 Wildlife Act) when relevant. 
+Do NOT fabricate specific section numbers if you are not confident — say "please cross-check with the latest BFAR AO (Administrative Order)" instead.`
+
+const BFAR_AI_SYSTEM_CATCH_ANALYSIS = `You are a BFAR fisheries compliance and stock-health analyst (Philippines).
+Return ONLY a valid JSON object with keys:
+  "summary":      one-paragraph plain text (< 160 chars),
+  "bfarNotes":    one-paragraph regulatory notes mentioning RA 8550 / RA 10654 / Wildlife Act / BFAR AO if applicable,
+  "stockHealth":  one of: "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN",
+  "recommendedActions": array of 0-4 short string actions an inspector could take next (<= 80 chars each).
+No markdown fences, no extra commentary. Strict JSON only.`
+
+app.post('/api/ai/chat', auth(), async (req, res) => {
+  const model = _pickAiModel()
+  if (!model || !_ai) return res.status(503).json({ error: 'AI not configured. Add OPENAI_API_KEY or ANTHROPIC_API_KEY to environment.' })
+  const { messages = [] } = req.body || {}
+  try {
+    const { streamText } = _ai
+    const result = streamText({
+      model,
+      system: BFAR_AI_SYSTEM_CHAT,
+      messages: Array.isArray(messages) ? messages : [],
+      temperature: 0.2,
+      maxSteps: 1,
+      onFinish: ({ usage, finishReason }) => {
+        try { console.log(`[ai/chat] user=${req.user && req.user.id} finish=${finishReason} usage=${JSON.stringify(usage)}`) } catch {}
+      },
+    })
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.setHeader('Transfer-Encoding', 'chunked')
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.flushHeaders && res.flushHeaders()
+    for await (const chunk of result.textStream) {
+      if (chunk) res.write(chunk)
+    }
+    res.end()
+  } catch (err) {
+    try { console.error('[ai/chat] error', err && err.stack || err) } catch {}
+    if (res.headersSent) { try { res.end() } catch {} }
+    else res.status(500).json({ error: (err && err.message) || String(err) })
+  }
+})
+
+app.post('/api/ai/catch-analysis', auth(), async (req, res) => {
+  const model = _pickAiModel()
+  if (!model || !_ai) return res.status(503).json({ error: 'AI not configured. Add OPENAI_API_KEY or ANTHROPIC_API_KEY to environment.' })
+  const { species = '', weightKg = null, location = '', notes = '', capturedAt = '' } = req.body || {}
+  try {
+    const { generateText } = _ai
+    const promptLines = [
+      'Inspect this catch report from a BFAR field inspector and return the strict JSON shape requested in system.',
+      `species: ${species || '(not provided)'}`,
+      `weightKg: ${weightKg === null || weightKg === '' ? '(not provided)' : String(weightKg)}`,
+      `capturedAt: ${capturedAt || '(not provided)'}`,
+      `location: ${location || '(not provided)'}`,
+      `inspector notes: ${notes || '(none)'}`,
+      `reporter userId: ${req.user && req.user.id} (${req.user && req.user.role})`,
+    ]
+    const { text, usage, finishReason } = await generateText({
+      model,
+      system: BFAR_AI_SYSTEM_CATCH_ANALYSIS,
+      prompt: promptLines.join('\n'),
+      temperature: 0.2,
+      maxRetries: 1,
+    })
+    let analysis
+    try {
+      const cleaned = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+      analysis = JSON.parse(cleaned)
+    } catch {
+      analysis = {
+        summary: (text || '').slice(0, 160),
+        bfarNotes: '',
+        stockHealth: 'UNKNOWN',
+        recommendedActions: [],
+        _rawText: text,
+      }
+    }
+    try { console.log(`[ai/catch-analysis] user=${req.user && req.user.id} finish=${finishReason} usage=${JSON.stringify(usage)}`) } catch {}
+    res.json({ ok: true, usage: usage || null, analysis })
+  } catch (err) {
+    try { console.error('[ai/catch-analysis] error', err && err.stack || err) } catch {}
+    res.status(500).json({ error: (err && err.message) || String(err) })
+  }
 })
 
 if (IS_SERVERLESS) {

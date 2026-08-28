@@ -108,6 +108,87 @@
       .links { margin-top: 24px; font-size: 14px; }
       .links a { color: var(--primary); text-decoration: none; font-weight: 600; }
       .links a:hover { text-decoration: underline; }
+
+      .row-between {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: -4px 0 12px 0;
+        font-size: 13px;
+      }
+      .remember {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-main);
+        font-weight: 500;
+        cursor: pointer;
+        user-select: none;
+      }
+      .remember input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+        accent-color: var(--primary);
+        width: 16px;
+        height: 16px;
+        padding: 0;
+      }
+      .forgot-link {
+        color: var(--primary);
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .forgot-link:hover { text-decoration: underline; }
+
+      .divider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 20px 0 8px 0;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+      .divider::before,
+      .divider::after {
+        content: "";
+        flex: 1 1 auto;
+        height: 1px;
+        background: var(--border);
+      }
+
+      .btn-google {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        width: 100%;
+        padding: 14px;
+        background: var(--surface);
+        color: var(--text-main);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: background 0.2s, border-color 0.2s;
+        box-sizing: border-box;
+      }
+      .btn-google:hover {
+          background: rgba(0,0,0,0.03);
+          border-color: #b8b8bd;
+        }
+      @media (prefers-color-scheme: dark) {
+        .btn-google:hover { background: rgba(255,255,255,0.04); border-color: #636366; }
+      }
+      .btn-google svg {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+      }
     </style>
   </head>
   <body>
@@ -130,8 +211,29 @@
           <button class="toggle-eye" onclick="togglePassword()">🔒</button>
         </div>
       </div>
+
+      <div class="row-between">
+        <label class="remember">
+          <input id="remember" type="checkbox" />
+          Remember me
+        </label>
+        <a href="#" onclick="forgotPassword(event)" class="forgot-link">Forgot Password?</a>
+      </div>
       
       <button onclick="login()">Login</button>
+
+      <div class="divider">OR</div>
+
+      <button onclick="googleLogin()" class="btn-google" type="button">
+        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        Continue with Google
+      </button>
+
       <div id="msg" class="msg"></div>
       
       <div class="links">
@@ -140,6 +242,9 @@
     </div>
 
     <script>
+      const REMEMBER_KEY = 'fish_login_remember_v1';
+      const REMEMBERED_EMAIL_KEY = 'fish_login_email_v1';
+
       // Check if redirected from registration
       const params = new URLSearchParams(location.search);
       if (params.has('registered')) {
@@ -147,6 +252,18 @@
         sm.textContent = 'Account created successfully! Please log in to continue.';
         sm.style.display = 'block';
       }
+
+      // Restore remembered email + checkbox state
+      (function restoreRemembered() {
+        try {
+          const rememberOn = localStorage.getItem(REMEMBER_KEY) === '1';
+          const rememberedEmail = localStorage.getItem(REMEMBERED_EMAIL_KEY) || '';
+          const cb = document.getElementById('remember');
+          const emailEl = document.getElementById('email');
+          if (cb) cb.checked = rememberOn;
+          if (rememberOn && rememberedEmail && emailEl) emailEl.value = rememberedEmail;
+        } catch {}
+      })();
 
       function togglePassword() {
         const p = document.getElementById('password');
@@ -160,10 +277,82 @@
         }
       }
 
+      function persistRememberChoice(emailValue) {
+        try {
+          const cb = document.getElementById('remember');
+          const on = cb && cb.checked;
+          if (on) {
+            localStorage.setItem(REMEMBER_KEY, '1');
+            if (emailValue) localStorage.setItem(REMEMBERED_EMAIL_KEY, String(emailValue));
+          } else {
+            localStorage.removeItem(REMEMBER_KEY);
+            localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+          }
+        } catch {}
+      }
+
+      function forgotPassword(e) {
+        if (e) e.preventDefault();
+        openForgotPrompt();
+      }
+
+      function openForgotPrompt() {
+        const email = (document.getElementById('email').value || '').trim();
+        const msg = document.getElementById('msg');
+        msg.className = 'msg';
+        const msgText = email
+          ? `If an account exists for ${email}, a password reset link will be sent.`
+          : 'Please enter your email first, then click Forgot Password again to receive a reset link.';
+        msg.textContent = msgText;
+        // Optional: hook to backend forgot endpoint here later
+      }
+
+      async function googleLogin() {
+        const msg = document.getElementById('msg');
+        msg.className = 'msg';
+        msg.textContent = 'Redirecting to Google…';
+        try {
+          // Quick availability check (optional) — then redirect
+          location.href = '/api/auth/google';
+        } catch (e) {
+          msg.className = 'msg error';
+          msg.textContent = (e && e.message) ? String(e.message) : 'Failed to start Google sign-in.';
+        }
+      }
+
+      (function handleLoginQueryParams() {
+        const params = new URLSearchParams(location.search);
+        const err = params.get('error');
+        const msg = document.getElementById('msg');
+        if (err && msg) {
+          msg.className = 'msg error';
+          msg.textContent = err;
+          // Clear from URL without reloading
+          const u = new URL(location.href);
+          u.searchParams.delete('error');
+          window.history.replaceState({}, document.title, u.toString());
+        }
+        // In case Google OAuth callback accidentally lands here with token:
+        const token = params.get('token');
+        const userRaw = params.get('user');
+        if (token) {
+          try {
+            const user = userRaw ? JSON.parse(userRaw) : null;
+            localStorage.setItem('fish_token', token);
+            if (user) localStorage.setItem('fish_user', JSON.stringify(user));
+            const dest = (user && user.role === 'admin') ? '/admin.html' : '/user.html';
+            location.replace(dest);
+          } catch (e) {}
+        }
+      })();
+
       async function login() {
         const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
         const msg = document.getElementById('msg');
+
+        persistRememberChoice(email);
+
         msg.textContent = 'Logging in...';
         msg.className = 'msg';
 

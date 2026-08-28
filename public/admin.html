@@ -480,7 +480,7 @@
 
     <script>
       const ADMIN_BADGE_STORAGE_KEY = 'admin_sidebar_reads_v1'
-      const state = { token: localStorage.getItem('fish_token'), user: JSON.parse(localStorage.getItem('fish_user') || 'null'), species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, mapPollTimer: null, liveEvents: [], statusByUserId: new Map(), selectedUsers: new Set(), readState: loadAdminReadState(), unreadCounts: {}, tracksSummary: [], trackHistory: [], historyMap: null, historyRoute: null, currentHistoryUserId: null, currentHistoryFilter: 'all', historySelectedTracks: new Set(), catchesSummary: [], catchHistory: [], catchHistoryMap: null, currentCatchHistoryUserId: null, currentCatchHistoryFilter: 'all', historySelectedCatches: new Set() }
+      const state = { token: localStorage.getItem('fish_token'), user: JSON.parse(localStorage.getItem('fish_user') || 'null'), species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, mapPollTimer: null, liveEvents: [], statusByUserId: new Map(), selectedUsers: new Set(), readState: loadAdminReadState(), unreadCounts: {}, tracksSummary: [], trackHistory: [], historyMap: null, historyRoute: null, currentHistoryUserId: null, currentHistoryFilter: 'all', historySelectedTracks: new Set(), catchesSummary: [], catchHistory: [], catchHistoryMap: null, currentCatchHistoryUserId: null, currentCatchHistoryVesselId: null, currentCatchHistoryFilter: 'all', historySelectedCatches: new Set() }
 
       function loadAdminReadState() {
         try {
@@ -572,6 +572,32 @@
         else refreshSidebarBadges()
       }
       
+      // Ingest OAuth callback ?token=&user= before redirect check
+      (function ingestGoogleAuthParams() {
+        try {
+          const params = new URLSearchParams(location.search)
+          const token = params.get('token')
+          const userRaw = params.get('user')
+          if (token) {
+            localStorage.setItem('fish_token', token)
+            state.token = token
+          }
+          if (userRaw) {
+            try {
+              const user = JSON.parse(userRaw)
+              localStorage.setItem('fish_user', JSON.stringify(user))
+              state.user = user
+            } catch (e) {}
+          }
+          if (token || userRaw) {
+            const u = new URL(location.href)
+            u.searchParams.delete('token')
+            u.searchParams.delete('user')
+            window.history.replaceState({}, document.title, u.toString())
+          }
+        } catch (e) {}
+      })()
+
       // Redirect if not logged in or not admin
       if (!state.token || (state.user && state.user.role !== 'admin')) {
         location.href = '/login.html';
@@ -919,9 +945,14 @@
           return
         }
         arr.forEach(s => {
-          const userName = s.userName || s.userId || 'Unknown'
-          const userEmail = s.userEmail || ''
-          ct.innerHTML += `<tr><td><a href="#" onclick="openCatchHistory('${s.userId}'); return false;" style="font-weight:600; color:var(--primary)">${userName}</a><div class="small">${userEmail}</div></td><td>${s.barangay || '—'}</td><td>${s.latestSpecies || '—'}</td><td>${s.totalCatches} catches</td><td>${s.latestCapturedAt ? new Date(s.latestCapturedAt).toLocaleString() : '—'}</td><td><button onclick="openCatchHistory('${s.userId}')">View History</button></td></tr>`
+          const ownerName = s.ownerName || '—'
+          const sub = []
+          if (s.vesselName) sub.push(s.vesselName)
+          if (s.registrationNumber) sub.push('Reg #' + s.registrationNumber)
+          if (sub.length === 0 && !s.vesselId) sub.push('Unassigned Vessel')
+          const subtitle = sub.join(' · ')
+          const vidParam = (s.vesselId || '__unassigned__')
+          ct.innerHTML += `<tr data-vid="${vidParam}"><td><a href="#" onclick="openCatchHistory(null, '${vidParam}'); return false;" style="font-weight:600; color:var(--primary)">${ownerName}</a>${subtitle ? `<div class="small">${subtitle}</div>` : ''}</td><td>${s.barangay || '—'}</td><td>${s.latestSpecies || '—'}</td><td>${s.totalCatches} catches</td><td>${s.latestCapturedAt ? new Date(s.latestCapturedAt).toLocaleString() : '—'}</td><td><button onclick="openCatchHistory(null, '${vidParam}')">View History</button></td></tr>`
         })
       }
 
@@ -932,9 +963,10 @@
           return
         }
         const filtered = (Array.isArray(state.catchesSummary) ? state.catchesSummary : []).filter(s =>
-          (s.userName || '').toLowerCase().includes(q) || 
-          (s.userEmail || '').toLowerCase().includes(q) ||
-          (s.userId || '').toLowerCase().includes(q) ||
+          (s.ownerName || '').toLowerCase().includes(q) || 
+          (s.vesselName || '').toLowerCase().includes(q) ||
+          (s.registrationNumber || '').toLowerCase().includes(q) ||
+          (s.vesselId || '').toLowerCase().includes(q) ||
           (s.barangay || '').toLowerCase().includes(q) ||
           (s.latestSpecies || '').toLowerCase().includes(q)
         )
@@ -1056,11 +1088,13 @@
         renderTracksSummary(filtered)
       }
 
-      function startEditCatch(id, species, note, weight, length, gear, vessel) {
+      function startEditCatch(id, species, note, weight, length, netType, engine, vessel) {
         const row = document.querySelector(`tr[data-id="${id}"]`); if (!row) return
         const sp = row.querySelector('.sp'); 
         const wt = row.querySelector('.wt'); 
         const ln = row.querySelector('.ln');
+        const nt = row.querySelector('.nt');
+        const gr = row.querySelector('.gr');
         const vs = row.querySelector('.vs');
         const act = row.querySelector('.act')
         
@@ -1068,6 +1102,8 @@
         const noteId = `note_${id}`;
         const wtId = `wt_${id}`;
         const lnId = `ln_${id}`;
+        const ntId = `nt_${id}`;
+        const grId = `gr_${id}`;
         const vsId = `vs_${id}`;
         
         const opts = (state.species||[]).map(s => `<option ${s===species?'selected':''}>${s}</option>`).join('') || `<option ${species?'selected':''}>${species||'unknown'}</option>`
@@ -1075,23 +1111,27 @@
         sp.innerHTML = `<select id="${selId}" style="width:100%">${opts}</select><br/><input id="${noteId}" placeholder="Note" value="${note||''}" style="margin-top:4px; width:100%"/>`
         wt.innerHTML = `<input id="${wtId}" type="number" step="0.01" value="${weight||''}" style="width:60px"/>`
         ln.innerHTML = `<input id="${lnId}" type="number" step="0.1" value="${length||''}" style="width:60px"/>`
+        if (nt) nt.innerHTML = `<input id="${ntId}" value="${netType||''}" style="width:100%"/>`
+        if (gr) gr.innerHTML = `<input id="${grId}" value="${engine||''}" style="width:100%"/>`
         vs.innerHTML = `<input id="${vsId}" value="${vessel||''}" style="width:100%"/>`
         
-        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${vsId}')">Save</button> <button onclick="if (state.currentCatchHistoryUserId) { loadCatchHistory() } else { loadData() }">Cancel</button>`
+        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${ntId}','${grId}','${vsId}')">Save</button> <button onclick="if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) { loadCatchHistory() } else { loadData() }">Cancel</button>`
       }
-      async function saveCatch(id, selId, noteId, wtId, lnId, vsId) {
+      async function saveCatch(id, selId, noteId, wtId, lnId, ntId, grId, vsId) {
         const species = document.getElementById(selId).value
         const note = document.getElementById(noteId).value
         const weightKg = parseFloat(document.getElementById(wtId).value) || null
         const lengthCm = parseFloat(document.getElementById(lnId).value) || null
+        const netType = document.getElementById(ntId) ? (document.getElementById(ntId).value || null) : null
+        const gear = document.getElementById(grId) ? (document.getElementById(grId).value || null) : null
         const vessel = document.getElementById(vsId).value || null
         
         await fetch('/api/admin/catches/'+id, { 
           method:'PATCH', 
           headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, 
-          body: JSON.stringify({ species, note, weightKg, lengthCm, vessel }) 
+          body: JSON.stringify({ species, note, weightKg, lengthCm, netType, gear, vessel }) 
         })
-        if (state.currentCatchHistoryUserId) {
+        if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) {
           loadCatchHistory()
         } else {
           loadData()
@@ -1100,7 +1140,7 @@
       async function deleteCatch(id) { 
         if (!confirm('Delete this catch?')) return
         await fetch('/api/admin/catches/'+id, { method:'DELETE', headers:{ 'Authorization':'Bearer '+state.token } }); 
-        if (state.currentCatchHistoryUserId) {
+        if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) {
           loadCatchHistory()
         } else {
           document.getElementById('catchSearch').value = ''
@@ -1285,7 +1325,7 @@
           NetType: c.netType || '',
           WeightKg: c.weightKg || null,
           LengthCm: c.lengthCm || null,
-          Gear: c.gear || '',
+          Engine: c.gear || '',
           Vessel: c.vessel || '',
           Latitude: c.lat,
           Longitude: c.lng,
@@ -1832,18 +1872,46 @@
            if (!state.catches) state.catches = []
            if (!state.catches.some(x => x.id === c.id)) state.catches.unshift(c)
            if (!state.catchesSummary) state.catchesSummary = []
-           const existing = state.catchesSummary.find(s => s.userId === c.userId)
+           const vess = (Array.isArray(state.vessels) ? state.vessels : []).find(v =>
+             (c.vesselId && v.id === c.vesselId) ||
+             (c.vesselRegistrationNumber && v.vessel_registration_number && String(v.vessel_registration_number).trim().toLowerCase() === String(c.vesselRegistrationNumber).trim().toLowerCase()) ||
+             (c.vesselName && v.vessel_name && String(v.vessel_name).trim().toLowerCase() === String(c.vesselName).trim().toLowerCase())
+           )
+           const cOwnerName = c.ownerName || (vess && vess.owner_name) || null
+           const cVesselId = c.vesselId || (vess && vess.id) || null
+           const cBarangay = c.barangay || (vess && vess.barangay) || null
+           const cRegistrationNumber = c.vesselRegistrationNumber || (vess && vess.vessel_registration_number) || null
+           const cVesselName = c.vesselName || c.vessel || (vess && vess.vessel_name) || null
+           const vidKey = cVesselId || (cRegistrationNumber || cVesselName || '__unassigned__')
+           const existing = state.catchesSummary.find(s => (s.vesselId || '__unassigned__') === vidKey || (s.registrationNumber && vidKey === s.registrationNumber) || (s.vesselName && vidKey === s.vesselName))
            if (existing) {
              existing.totalCatches += 1
              existing.latestCapturedAt = c.capturedAt || c.createdAt
              existing.latestSpecies = c.species
+             if (!existing.ownerName && cOwnerName) existing.ownerName = cOwnerName
+             if (!existing.vesselName && cVesselName) existing.vesselName = cVesselName
+             if (!existing.registrationNumber && cRegistrationNumber) existing.registrationNumber = cRegistrationNumber
+             if (!existing.barangay && cBarangay) existing.barangay = cBarangay
+             if (!existing.vesselId && cVesselId) existing.vesselId = cVesselId
+           } else {
+             state.catchesSummary.unshift({
+               vesselId: cVesselId,
+               ownerName: cOwnerName,
+               barangay: cBarangay,
+               registrationNumber: cRegistrationNumber,
+               vesselName: cVesselName,
+               latestSpecies: c.species,
+               latestCapturedAt: c.capturedAt || c.createdAt,
+               totalCatches: 1,
+               latestUserId: c.userId
+             })
            }
            if (state.currentModule === 'mod_catches') renderCatchesSummary(state.catchesSummary)
            refreshSidebarBadges()
            return
          }
          const thumb = c.photoUrl ? `<a target="_blank" href="${c.photoUrl}"><img src="${c.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
-         const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td>${c.netType || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+         const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="nt">${c.netType || ''}</td><td class="gr">${c.gear || ''}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.netType||'').replace(/"/g,'&quot;')}','${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
          ct.insertRow(1).outerHTML = row
          if (!state.catches) state.catches = []
          if (!state.catches.some(x => x.id === c.id)) state.catches.unshift(c)
@@ -2215,6 +2283,7 @@
           state.catchHistoryMap = null
         }
         state.currentCatchHistoryUserId = null
+        state.currentCatchHistoryVesselId = null
         state.catchHistory = []
         state.historySelectedCatches.clear()
       }
@@ -2235,9 +2304,10 @@
           default: return { from: null, to: null }
         }
       }
-      async function openCatchHistory(userId) {
-        if (!userId) return
-        state.currentCatchHistoryUserId = userId
+      async function openCatchHistory(userId, vesselId) {
+        if (!userId && !vesselId) return
+        state.currentCatchHistoryUserId = userId || null
+        state.currentCatchHistoryVesselId = vesselId || null
         state.currentCatchHistoryFilter = 'all'
         state.historySelectedCatches.clear()
         
@@ -2249,9 +2319,11 @@
         box.style.maxWidth = '1200px'
         box.style.maxHeight = '90vh'
         box.style.overflowY = 'auto'
+        const headerTitle = vesselId ? (vesselId === '__unassigned__' ? 'CATCH HISTORY — UNASSIGNED VESSEL' : 'CATCH HISTORY — BY VESSEL') : 'CATCH HISTORY'
+        const deleteBtnLabel = vesselId ? 'Delete History for This Vessel' : 'Delete All History'
         box.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-            <h3 style="margin:0">CATCH HISTORY</h3>
+            <h3 style="margin:0">${headerTitle}</h3>
             <button onclick="closeCatchHistory()" style="width:auto; height:auto; padding:8px 16px">Close</button>
           </div>
           <div id="catch_history_user_info" class="small" style="margin-bottom:12px; color:var(--text-muted)">Loading...</div>
@@ -2267,15 +2339,15 @@
             <input id="catchFrom" type="date" style="display:none; width:auto; margin:0" />
             <input id="catchTo" type="date" style="display:none; width:auto; margin:0" />
             <button onclick="loadCatchHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0"><i class="fa-solid fa-filter"></i> Apply Filter</button>
-            <button onclick="confirmDeleteUserCatchHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0; background:#ff3b30"><i class="fa-solid fa-trash-can"></i> Delete All History</button>
+            <button onclick="confirmDeleteUserCatchHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0; background:#ff3b30"><i class="fa-solid fa-trash-can"></i> ${deleteBtnLabel}</button>
           </div>
           <div id="catch_history_map" style="width:100%; height:320px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-bottom:12px"></div>
           <div style="max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius:12px">
             <table id="catch_history_table" style="margin-top:0">
               <thead>
-                <tr><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>
+                <tr><th>Species</th><th>Weight</th><th>Length</th><th>Net</th><th>Engine</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>
               </thead>
-              <tbody><tr><td colspan="8" style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</td></tr></tbody>
+              <tbody><tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</td></tr></tbody>
             </table>
           </div>
           <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
@@ -2287,7 +2359,8 @@
 
       async function loadCatchHistory() {
         const userId = state.currentCatchHistoryUserId
-        if (!userId) return
+        const vesselId = state.currentCatchHistoryVesselId
+        if (!userId && !vesselId) return
         
         const filterVal = document.getElementById('catchDateFilter').value
         const customFrom = document.getElementById('catchFrom').value
@@ -2295,34 +2368,50 @@
         const range = getCatchDateRange(filterVal, customFrom, customTo)
         
         const headers = { 'Authorization': 'Bearer ' + state.token }
-        let url = '/api/catches?userId=' + encodeURIComponent(userId)
-        if (range.from) url += '&from=' + encodeURIComponent(range.from)
-        if (range.to) url += '&to=' + encodeURIComponent(range.to)
+        let url = '/api/catches?'
+        const params = []
+        if (userId) params.push('userId=' + encodeURIComponent(userId))
+        if (vesselId) params.push('vesselId=' + encodeURIComponent(vesselId))
+        if (range.from) params.push('from=' + encodeURIComponent(range.from))
+        if (range.to) params.push('to=' + encodeURIComponent(range.to))
+        url += params.join('&')
         
         try {
           const r = await fetch(url, { headers })
           const d = await r.json()
           if (!r.ok) throw new Error(d.error || 'Failed to load catch history')
-          state.catchHistory = (Array.isArray(d) ? d : []).sort((a, b) => new Date(b.capturedAt || b.createdAt) - new Date(a.capturedAt || a.createdAt))
+          const rows = Array.isArray(d) ? d : []
+          state.catchHistory = rows.sort((a, b) => new Date(b.capturedAt || b.createdAt) - new Date(a.capturedAt || a.createdAt))
           renderCatchHistory()
           updateCatchHistoryMap()
-          updateCatchHistoryUserInfo(userId)
+          updateCatchHistoryUserInfo(userId, vesselId)
         } catch (e) {
           const tbl = document.getElementById('catch_history_table')
-          if (tbl) tbl.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:var(--error)">${e.message || 'Failed to load history'}</td></tr>`
+          if (tbl) tbl.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:20px; color:var(--error)">${e.message || 'Failed to load history'}</td></tr>`
         }
       }
 
-      function updateCatchHistoryUserInfo(userId) {
+      function updateCatchHistoryUserInfo(userId, vesselId) {
         const infoEl = document.getElementById('catch_history_user_info')
         if (!infoEl) return
-        const summary = (state.catchesSummary || []).find(s => s.userId === userId)
         const latest = state.catchHistory[0]
+        const totalCatches = state.catchHistory ? state.catchHistory.length : 0
+        const latestTime = latest ? new Date(latest.capturedAt || latest.createdAt).toLocaleString() : '—'
+        if (vesselId) {
+          const summary = (state.catchesSummary || []).find(s => (s.vesselId || '__unassigned__') === (vesselId || '__unassigned__'))
+          const owner = summary ? (summary.ownerName || (vesselId === '__unassigned__' ? 'Unassigned Vessel' : '—')) : (vesselId === '__unassigned__' ? 'Unassigned Vessel' : '—')
+          const sub = []
+          if (summary && summary.vesselName) sub.push(summary.vesselName)
+          if (summary && summary.registrationNumber) sub.push('Reg #' + summary.registrationNumber)
+          if (summary && summary.barangay && summary.barangay !== '—') sub.push(summary.barangay)
+          const subStr = sub.join(' • ')
+          infoEl.innerHTML = `<b style="color:var(--text-main); font-size:14px">Owner: ${owner}</b>${subStr ? ' • ' + subStr : ''}<br/>Total Catches: ${totalCatches} • Latest: ${latestTime}`
+          return
+        }
+        const summary = (state.catchesSummary || []).find(s => s.userId === userId)
         const name = summary ? (summary.userName || userId) : userId
         const email = summary ? (summary.userEmail || '') : ''
         const barangay = summary ? (summary.barangay || '—') : '—'
-        const totalCatches = summary ? summary.totalCatches : (state.catchHistory ? state.catchHistory.length : 0)
-        const latestTime = latest ? new Date(latest.capturedAt || latest.createdAt).toLocaleString() : '—'
         infoEl.innerHTML = `<b style="color:var(--text-main); font-size:14px">${name}</b>${email ? ' • ' + email : ''}${barangay !== '—' ? ' • ' + barangay : ''}<br/>Total Catches: ${totalCatches} • Latest: ${latestTime}`
       }
 
@@ -2333,19 +2422,18 @@
         tbl.innerHTML = ''
         if (thead) tbl.appendChild(thead)
         else {
-          tbl.innerHTML = '<tr><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
+          tbl.innerHTML = '<tr><th>Species</th><th>Weight</th><th>Length</th><th>Net</th><th>Engine</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
         }
         const tbody = tbl.querySelector('tbody') || document.createElement('tbody')
         tbody.innerHTML = ''
         if (!state.catchHistory || state.catchHistory.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:var(--text-muted)">No catch records found for this user.</td></tr>'
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-muted)">No catch records found.</td></tr>'
         } else {
           state.catchHistory.forEach(c => {
-            const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
             const date = c.capturedAt ? new Date(c.capturedAt) : (c.createdAt ? new Date(c.createdAt) : null)
             const captured = date ? date.toLocaleString() : '—'
             const coordStr = c.lat != null && c.lng != null ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}` : '—'
-            tbody.innerHTML += `<tr data-id="${c.id}"><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="ng">${netGear}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${coordStr}</a></td><td>${captured}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="confirmDeleteCatchHistoryTrack('${c.id}')">Delete</button></td></tr>`
+            tbody.innerHTML += `<tr data-id="${c.id}"><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="nt">${c.netType || ''}</td><td class="gr">${c.gear || ''}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${coordStr}</a></td><td>${captured}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.netType||'').replace(/"/g,'&quot;')}','${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="confirmDeleteCatchHistoryTrack('${c.id}')">Delete</button></td></tr>`
           })
         }
         if (!tbl.querySelector('tbody')) tbl.appendChild(tbody)
@@ -2377,9 +2465,10 @@
         pts.forEach((c, i) => {
           const marker = window.L.circleMarker([c.lat, c.lng], { radius: 7, color: '#06D6A0', weight: 2, opacity: 1, fillColor: '#06D6A0', fillOpacity: 0.9 })
           marker.addTo(map)
-          const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
+          const netStr = c.netType || '—'
+          const engineStr = c.gear || '—'
           const date = c.capturedAt ? new Date(c.capturedAt) : (c.createdAt ? new Date(c.createdAt) : null)
-          marker.bindPopup(`<b>${c.species}</b><br/><b>Weight:</b> ${c.weightKg || '—'}<br/><b>Length:</b> ${c.lengthCm || '—'}<br/><b>Net/Gear:</b> ${netGear || '—'}<br/><b>Vessel:</b> ${c.vesselName || c.vessel || '—'}<br/><b>Time:</b> ${date ? date.toLocaleString() : '—'}<br/><b>Coords:</b> ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`)
+          marker.bindPopup(`<b>${c.species}</b><br/><b>Weight:</b> ${c.weightKg || '—'}<br/><b>Length:</b> ${c.lengthCm || '—'}<br/><b>Net:</b> ${netStr}<br/><b>Engine:</b> ${engineStr}<br/><b>Vessel:</b> ${c.vesselName || c.vessel || '—'}<br/><b>Time:</b> ${date ? date.toLocaleString() : '—'}<br/><b>Coords:</b> ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`)
           state.catchHistoryMap.markersByUserId.set(c.id, marker)
         })
         
@@ -2403,7 +2492,14 @@
 
       async function confirmDeleteUserCatchHistory() {
         const userId = state.currentCatchHistoryUserId
-        if (!userId) return
+        const vesselId = state.currentCatchHistoryVesselId
+        if (!userId && !vesselId) return
+        if (vesselId) {
+          const summary = (state.catchesSummary || []).find(s => s.vesselId === vesselId)
+          const name = summary ? (summary.ownerName || (vesselId === '__unassigned__' ? 'Unassigned Vessel' : (summary.vesselName || 'Vessel'))) : (vesselId === '__unassigned__' ? 'Unassigned Vessel' : 'This Vessel')
+          openConfirm(`Are you sure you want to delete all catch records for ${name}? This action cannot be undone.`, function(){ deleteCatchHistoryByVessel(vesselId) })
+          return
+        }
         const summary = (state.catchesSummary || []).find(s => s.userId === userId)
         const name = summary ? (summary.userName || userId) : userId
         openConfirm(`Are you sure you want to delete all catch records for ${name}? This action cannot be undone.`, function(){ deleteUserCatchHistory(userId) })
@@ -2416,6 +2512,13 @@
         loadData()
       }
 
+      async function deleteCatchHistoryByVessel(vesselId) {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/catches/vessel/' + encodeURIComponent(vesselId), { method:'DELETE', headers })
+        closeCatchHistory()
+        loadData()
+      }
+
       async function confirmDeleteCatchHistoryTrack(id) {
         openConfirm('Delete this catch record?', function(){ deleteCatchHistoryTrack(id) })
       }
@@ -2423,7 +2526,7 @@
       async function deleteCatchHistoryTrack(id) {
         const headers = { 'Authorization':'Bearer '+state.token }
         await fetch('/api/admin/catches/' + id, { method:'DELETE', headers })
-        if (state.currentCatchHistoryUserId) {
+        if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) {
           loadCatchHistory()
         } else {
           loadData()

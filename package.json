@@ -2,20 +2,28 @@
   "name": "capstone-pro-fish-monitor",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "start": "node server.js",
+    "start:prod": "NODE_ENV=production node server.js",
     "build": "echo 'Vercel build completed'",
     "migrate": "node scripts/migrate_to_supabase.js"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.42",
+    "@ai-sdk/openai": "^4.0.47",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
     "@turf/turf": "6.5.0",
+    "ai": "^7.0.79",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "exifr": "6.3.0",
     "express": "^4.19.2",
+    "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.2",
     "lowdb": "^1.0.0",
     "multer": "^1.4.5-lts.2",
@@ -25,7 +33,7 @@
     "web-push": "^3.6.6"
   },
   "devDependencies": {
-    "@vercel/node": "^5.9.3",
+    "@vercel/node": "^3.0.1",
     "nodemon": "^3.1.14"
   }
 }

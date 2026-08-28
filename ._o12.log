@@ -1,0 +1,7 @@
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
+⚠️  Supabase is not configured.
+🔄 Falling back to Local Mode (LowDB) to allow development...
+   (To use Supabase, please set SUPABASE_URL and SUPABASE_ANON_KEY in your .env file)
+Server running on http://localhost:3599
+LAN: http://192.168.244.1:3599
+LAN: http://192.168.100.12:3599

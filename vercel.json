@@ -1,15 +1,13 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "version": 2,
-  "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/server.js"
-    }
+  "installCommand": "npm install",
+  "buildCommand": "echo 'Vercel build completed'",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/",       "destination": "/api/[...all].js" },
+    { "source": "/:path*", "destination": "/api/[...all].js" }
   ]
 }

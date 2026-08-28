@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken')
 const bcrypt = require('bcryptjs')
 const low = require('lowdb')
 const FileSync = require('lowdb/adapters/FileSync')
+const Memory = require('lowdb/adapters/Memory')
 const { nanoid } = require('nanoid')
 const path = require('path')
 const fs = require('fs')
@@ -13,6 +14,125 @@ const exifr = require('exifr')
 const nodemailer = require('nodemailer')
 const webpush = require('web-push')
 const os = require('os')
+const crypto = require('crypto')
+
+// Google OAuth
+const { OAuth2Client } = (() => { try { return require('google-auth-library') } catch (e) { return { OAuth2Client: null } } })()
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim()
+const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || '').trim()
+const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback'
+const GOOGLE_CONFIGURED = !!(OAuth2Client && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && !GOOGLE_CLIENT_ID.includes('your-google-client-id') && !GOOGLE_CLIENT_SECRET.includes('your-google-client-secret'))
+let _googleClient = null
+function getGoogleClient(callbackBase) {
+  if (!GOOGLE_CONFIGURED) return null
+  if (_googleClient) return _googleClient
+  try {
+    _googleClient = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, String(callbackBase || '') + GOOGLE_CALLBACK_PATH)
+  } catch (e) { _googleClient = null }
+  return _googleClient
+}
+const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000
+const _googleStates = new Map() // state -> { createdAt }
+function makeGoogleState() {
+  const s = crypto.randomBytes(24).toString('hex')
+  _googleStates.set(s, { createdAt: Date.now() })
+  setTimeout(() => _googleStates.delete(s), GOOGLE_STATE_TTL_MS)
+  return s
+}
+function consumeGoogleState(s) {
+  if (!s) return false
+  const entry = _googleStates.get(s)
+  if (!entry) return false
+  _googleStates.delete(s)
+  return (Date.now() - entry.createdAt) <= GOOGLE_STATE_TTL_MS
+}
+function buildCallbackBase(req) {
+  const override = (process.env.GOOGLE_CALLBACK_BASE_URL || '').trim()
+  if (override) return override.replace(/\/$/, '')
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0].trim()
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3001').toString().split(',')[0].trim()
+  return `${proto}://${host}`
+}
+const ROLE_PRIORITY = { admin: 3, researcher: 2, inspector: 1, fisher: 0 }
+function findUserByEmail(list, email) {
+  const emailKey = String(email || '').trim().toLowerCase()
+  if (!emailKey) return null
+  const matches = (list || []).filter(u => String(u.email || '').trim().toLowerCase() === emailKey)
+  if (matches.length === 0) return null
+  if (matches.length === 1) return matches[0]
+  matches.sort((a, b) => (ROLE_PRIORITY[b.role || 'fisher'] || 0) - (ROLE_PRIORITY[a.role || 'fisher'] || 0))
+  return matches[0]
+}
+function sanitizeGoogleProfile(p) {
+  if (!p || typeof p !== 'object') return null
+  const sub = String(p.sub || p.id || '').trim()
+  const email = String(p.email || '').trim().toLowerCase()
+  const name = String(p.name || p.given_name || p.family_name || email.split('@')[0] || 'Google User').trim()
+  const picture = String(p.picture || p.pictureUrl || '').trim()
+  if (!email || !sub) return null
+  return { sub, email, name, picture, emailVerified: !!p.email_verified }
+}
+async function googleFetchUserInfo(client, codeTokens) {
+  // 1) Prefer id_token when available (fast, signed)
+  if (codeTokens && codeTokens.id_token) {
+    try {
+      const ticket = await client.verifyIdToken({ idToken: codeTokens.id_token, audience: GOOGLE_CLIENT_ID })
+      const payload = ticket.getPayload()
+      const clean = sanitizeGoogleProfile(payload)
+      if (clean) return clean
+    } catch (e) {}
+  }
+  // 2) Fallback: exchange access_token for userinfo via Google userinfo endpoint
+  if (codeTokens && codeTokens.access_token) {
+    try {
+      const info = await new Promise((resolve, reject) => {
+        const url = 'https://openidconnect.googleapis.com/v1/userinfo?access_token=' + encodeURIComponent(codeTokens.access_token)
+        const req = https.get(url, (res) => {
+          let data = ''
+          res.on('data', (c) => data += c)
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)) } catch (e) { reject(e) }
+          })
+        })
+        req.on('error', reject)
+      })
+      const clean = sanitizeGoogleProfile(info)
+      if (clean) return clean
+    } catch (e) {}
+  }
+  return null
+}
+function upsertGoogleUserLocal({ sub, email, name, picture }) {
+  const emailKey = String(email || '').trim().toLowerCase()
+  const subKey = String(sub || '').trim()
+  if (!emailKey || !subKey) throw new Error('Missing Google profile')
+  const list = usersDb.get('users').value() || []
+  let user = list.find(u => u.googleId && String(u.googleId) === subKey)
+  const roleSafe = 'fisher'
+  const now = new Date().toISOString()
+  if (!user) user = findUserByEmail(list, emailKey)
+  if (user) {
+    const patch = { googleId: subKey }
+    if (picture) patch.avatarUrl = String(picture)
+    if (!user.name) patch.name = name
+    if (!user.email) patch.email = emailKey
+    usersDb.get('users').find({ id: user.id }).assign(patch).write()
+    user = usersDb.get('users').find({ id: user.id }).value()
+  } else {
+    user = {
+      id: nanoid(),
+      name: name || emailKey.split('@')[0] || 'Google User',
+      email: emailKey,
+      role: roleSafe,
+      pass: null,
+      googleId: subKey,
+      avatarUrl: picture || null,
+      createdAt: now
+    }
+    usersDb.get('users').push(user).write()
+  }
+  return user
+}
 
 const app = express()
 app.use(cors())
@@ -25,34 +145,118 @@ process.on('uncaughtException', (e) => { try { console.error('uncaughtException'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me'
 
 const IS_SERVERLESS = !!process.env.VERCEL || !!process.env.NOW_REGION
-const DATA_DIR = IS_SERVERLESS ? path.join('/tmp', 'data') : path.join(__dirname, 'data')
-const UPLOAD_DIR = IS_SERVERLESS ? path.join('/tmp', 'uploads') : path.join(__dirname, 'uploads')
-try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.mkdirSync(UPLOAD_DIR, { recursive: true }) } catch {}
-const usersAdapter = new FileSync(path.join(DATA_DIR, 'users.json'))
-const catchesAdapter = new FileSync(path.join(DATA_DIR, 'catches.json'))
-const tracksAdapter = new FileSync(path.join(DATA_DIR, 'tracks.json'))
-const speciesAdapter = new FileSync(path.join(DATA_DIR, 'species.json'))
-const zonesAdapter = new FileSync(path.join(DATA_DIR, 'zones.json'))
-const alertsAdapter = new FileSync(path.join(DATA_DIR, 'alerts.json'))
-const pushAdapter = new FileSync(path.join(DATA_DIR, 'push.json'))
-const activityAdapter = new FileSync(path.join(DATA_DIR, 'activity_logs.json'))
-const imagesAdapter = new FileSync(path.join(DATA_DIR, 'images.json'))
-const protectedAreasAdapter = new FileSync(path.join(DATA_DIR, 'protected_areas.json'))
-const statusAdapter = new FileSync(path.join(DATA_DIR, 'status_events.json'))
-const vesselsAdapter = new FileSync(path.join(DATA_DIR, 'vessels.json'))
+const DATA_DIR = process.env.DATA_DIR || (IS_SERVERLESS ? path.join('/tmp', 'data') : path.join(__dirname, 'data'))
+const UPLOAD_DIR = process.env.UPLOAD_DIR || (IS_SERVERLESS ? path.join('/tmp', 'uploads') : path.join(__dirname, 'uploads'))
 
-const usersDb = low(usersAdapter)
-const catchesDb = low(catchesAdapter)
-const tracksDb = low(tracksAdapter)
-const speciesDb = low(speciesAdapter)
-const zonesDb = low(zonesAdapter)
-const alertsDb = low(alertsAdapter)
-const pushDb = low(pushAdapter)
-const activityDb = low(activityAdapter)
-const imagesDb = low(imagesAdapter)
-const protectedAreasDb = low(protectedAreasAdapter)
-const statusDb = low(statusAdapter)
-const vesselsDb = low(vesselsAdapter)
+const defaultCollections = {
+  'users.json': { users: [] },
+  'catches.json': [],
+  'tracks.json': [],
+  'species.json': [],
+  'zones.json': [],
+  'alerts.json': [],
+  'push.json': { subscriptions: [] },
+  'activity_logs.json': [],
+  'images.json': [],
+  'protected_areas.json': [],
+  'status_events.json': [],
+  'vessels.json': []
+}
+
+let USE_MEMORY_FALLBACK = false
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true })
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+  Object.entries(defaultCollections).forEach(([fileName, defaultContent]) => {
+    const fullPath = path.join(DATA_DIR, fileName)
+    try {
+      if (!fs.existsSync(fullPath)) {
+        fs.writeFileSync(fullPath, JSON.stringify(defaultContent, null, 2))
+      } else {
+        try {
+          const raw = fs.readFileSync(fullPath, 'utf8').trim()
+          if (!raw) {
+            fs.writeFileSync(fullPath, JSON.stringify(defaultContent, null, 2))
+          } else {
+            JSON.parse(raw)
+          }
+        } catch {
+          fs.writeFileSync(fullPath, JSON.stringify(defaultContent, null, 2))
+        }
+      }
+    } catch (e) { throw e }
+  })
+} catch (e) {
+  USE_MEMORY_FALLBACK = true
+  console.warn(`[db] Disk storage unavailable (DATA_DIR="${DATA_DIR}" error: ${e && e.code || e && e.message || String(e)}). Falling back to in-memory LowDB. Data written during this instance will NOT persist between function cold-starts.`)
+}
+
+function mkAdapter(fileName, defaultContent) {
+  if (USE_MEMORY_FALLBACK) return new Memory(fileName)
+  try { return new FileSync(path.join(DATA_DIR, fileName)) } catch (e) {
+    console.warn(`[db] FileSync adapter failed for ${fileName}: ${e && e.message || e}. Falling back to Memory adapter.`)
+    return new Memory(fileName)
+  }
+}
+
+const usersAdapter = mkAdapter('users.json')
+const catchesAdapter = mkAdapter('catches.json')
+const tracksAdapter = mkAdapter('tracks.json')
+const speciesAdapter = mkAdapter('species.json')
+const zonesAdapter = mkAdapter('zones.json')
+const alertsAdapter = mkAdapter('alerts.json')
+const pushAdapter = mkAdapter('push.json')
+const activityAdapter = mkAdapter('activity_logs.json')
+const imagesAdapter = mkAdapter('images.json')
+const protectedAreasAdapter = mkAdapter('protected_areas.json')
+const statusAdapter = mkAdapter('status_events.json')
+const vesselsAdapter = mkAdapter('vessels.json')
+
+let usersDb = low(usersAdapter)
+let catchesDb = low(catchesAdapter)
+let tracksDb = low(tracksAdapter)
+let speciesDb = low(speciesAdapter)
+let zonesDb = low(zonesAdapter)
+let alertsDb = low(alertsAdapter)
+let pushDb = low(pushAdapter)
+let activityDb = low(activityAdapter)
+let imagesDb = low(imagesAdapter)
+let protectedAreasDb = low(protectedAreasAdapter)
+let statusDb = low(statusAdapter)
+let vesselsDb = low(vesselsAdapter)
+
+if (USE_MEMORY_FALLBACK) {
+  const defaults = {
+    users: [], catches: [], tracks: [], species: [], zones: [], alerts: [],
+    push: { subscriptions: [] }, activity_logs: [], images: [], protected_areas: [], status_events: [], vessels: []
+  }
+  usersDb.defaults({ users: defaults.users }).write()
+  catchesDb.defaults(defaults.catches).write()
+  tracksDb.defaults(defaults.tracks).write()
+  speciesDb.defaults(defaults.species).write()
+  zonesDb.defaults(defaults.zones).write()
+  alertsDb.defaults(defaults.alerts).write()
+  pushDb.defaults(defaults.push).write()
+  activityDb.defaults(defaults.activity_logs).write()
+  imagesDb.defaults(defaults.images).write()
+  protectedAreasDb.defaults(defaults.protected_areas).write()
+  statusDb.defaults(defaults.status_events).write()
+  vesselsDb.defaults(defaults.vessels).write()
+  // Also seed a single default admin user so login works immediately after cold start (no file DB needed)
+  try {
+    const bcrypt = require('bcryptjs')
+    const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@local.test'
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'
+    const existingAdmin = usersDb.get('users').find({ role: 'admin' }).value()
+    if (!existingAdmin) {
+      try {
+        const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10)
+        usersDb.get('users').push({ id: nanoid(), email: ADMIN_EMAIL, passwordHash: hash, role: 'admin', name: 'Admin', createdAt: new Date().toISOString() }).write()
+        console.log('[db] Memory mode: seeded default admin user (' + ADMIN_EMAIL + ').')
+      } catch (e) { console.warn('[db] Memory mode: seed admin failed:', e && e.message || e) }
+    }
+  } catch {}
+}
 
 usersDb.defaults({ users: [] }).write()
 catchesDb.defaults({ catches: [] }).write()
@@ -145,6 +349,7 @@ function normalizeVesselRecord(record) {
     vessel_name: normalizeText(record.vessel_name),
     owner_name: normalizeText(record.owner_name),
     barangay: normalizeText(record.barangay),
+    engine_gear: normalizeText(record.engine_gear),
     userId: record.userId != null ? String(record.userId) : null,
     createdAt: record.createdAt || record.created_at || new Date().toISOString(),
     updatedAt: record.updatedAt || record.updated_at || new Date().toISOString()
@@ -355,7 +560,7 @@ app.post('/api/auth/register', async (req, res) => {
   let { name, email, password, role } = req.body
   if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' })
   email = String(email).trim().toLowerCase()
-  const exists = usersDb.get('users').find(u => String(u.email||'').trim().toLowerCase() === email).value()
+  const exists = findUserByEmail(usersDb.get('users').value() || [], email)
   if (exists) return res.status(409).json({ error: 'Email already registered' })
   const hash = bcrypt.hashSync(password, 10)
   const roleSafe = ['admin','inspector','fisher','researcher'].includes((role||'').toLowerCase()) ? role.toLowerCase() : 'fisher'
@@ -370,12 +575,77 @@ app.post('/api/auth/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Missing fields' })
   email = String(email).trim().toLowerCase()
   const list = usersDb.get('users').value()
-  const user = list.find(u => String(u.email||'').trim().toLowerCase() === email)
+  const user = findUserByEmail(list, email)
   if (!user) return res.status(401).json({ error: 'Invalid credentials' })
-  const ok = bcrypt.compareSync(password, user.pass)
+  const ok = user.pass ? bcrypt.compareSync(password, user.pass) : false
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' })
   const token = createToken(user)
   res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role, barangay: user.barangay || null, vessel_name: user.vessel_name || null, fisher_id: user.fisher_id || null } })
+})
+
+app.get('/api/auth/google/config', (req, res) => {
+  res.json({ configured: !!GOOGLE_CONFIGURED })
+})
+
+app.get('/api/auth/google', (req, res) => {
+  if (!GOOGLE_CONFIGURED) {
+    const err = encodeURIComponent('Google login is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the server environment.')
+    return res.redirect('/login.html?error=' + err)
+  }
+  try {
+    const callbackBase = buildCallbackBase(req)
+    const client = getGoogleClient(callbackBase)
+    if (!client) throw new Error('Google OAuth client unavailable')
+    const state = makeGoogleState()
+    const authorizeUrl = client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'select_account',
+      scope: ['openid', 'email', 'profile'],
+      state
+    })
+    return res.redirect(authorizeUrl)
+  } catch (e) {
+    console.error('[Google OAuth] Init error:', e && e.message)
+    const err = encodeURIComponent(e && e.message ? String(e.message) : 'Google login failed to start')
+    return res.redirect('/login.html?error=' + err)
+  }
+})
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  try {
+    if (!GOOGLE_CONFIGURED) throw new Error('Google login is not configured on this server.')
+    const { code, state, error, error_description } = req.query || {}
+    if (error) {
+      if (String(error).toLowerCase() === 'access_denied') {
+        return res.redirect('/login.html?error=' + encodeURIComponent('Google sign-in was cancelled.'))
+      }
+      const msg = error_description ? String(error_description) : `Google sign-in error: ${error}`
+      return res.redirect('/login.html?error=' + encodeURIComponent(msg))
+    }
+    if (!consumeGoogleState(state)) throw new Error('Invalid or expired Google sign-in state. Please try again.')
+    if (!code) throw new Error('Missing authorization code from Google.')
+    const callbackBase = buildCallbackBase(req)
+    const client = getGoogleClient(callbackBase)
+    if (!client) throw new Error('Google OAuth client unavailable')
+    const { tokens } = await client.getToken(String(code))
+    if (!tokens) throw new Error('Google returned no tokens')
+    client.setCredentials(tokens)
+    const profile = await googleFetchUserInfo(client, tokens)
+    if (!profile) throw new Error('Unable to retrieve your Google profile information.')
+    if (!profile.emailVerified) throw new Error('Your Google email address must be verified before you can sign in.')
+    const user = upsertGoogleUserLocal(profile)
+    const jwtToken = createToken(user)
+    const safeUser = { id: user.id, name: user.name, email: user.email, role: user.role, barangay: user.barangay || null, vessel_name: user.vessel_name || null, fisher_id: user.fisher_id || null, avatarUrl: user.avatarUrl || profile.picture || null }
+    // Set lightweight session cookie and redirect with token via query (handled by login page JS)
+    const redirectBase = (safeUser.role === 'admin') ? '/admin.html' : '/user.html'
+    const sep = redirectBase.includes('?') ? '&' : '?'
+    const dest = `${redirectBase}${sep}token=${encodeURIComponent(jwtToken)}&user=${encodeURIComponent(JSON.stringify(safeUser))}`
+    return res.redirect(dest)
+  } catch (e) {
+    console.error('[Google OAuth] Callback error:', e && e.message)
+    const msg = e && e.message ? String(e.message) : 'Google sign-in failed'
+    return res.redirect('/login.html?error=' + encodeURIComponent(msg))
+  }
 })
 
 // --- DASHBOARD STATS (Local Mode) ---
@@ -457,7 +727,7 @@ app.post('/api/public/install_admin', (req, res) => {
   password = String(password || process.env.ADMIN_PASSWORD || 'admin123')
   name = String(name || 'Administrator')
   if (!email || !password) return res.status(400).json({ error: 'Missing email/password' })
-  const exists = usersDb.get('users').find(u => String(u.email||'').trim().toLowerCase() === email).value()
+  const exists = findUserByEmail(usersDb.get('users').value() || [], email)
   if (exists) return res.status(409).json({ error: 'Email exists' })
   const hash = bcrypt.hashSync(password, 10)
   const user = { id: nanoid(), name, email, pass: hash, role: 'admin', createdAt: new Date().toISOString() }
@@ -490,6 +760,7 @@ app.post('/api/vessels', auth(), async (req, res) => {
   const vessel_name = normalizeText(req.body.vessel_name)
   const owner_name = normalizeText(req.body.owner_name)
   const barangay = normalizeText(req.body.barangay)
+  const engine_gear = normalizeText(req.body.engine_gear)
   if (!vessel_registration_number || !vessel_name || !owner_name || !barangay) {
     return res.status(400).json({ error: 'All vessel fields are required' })
   }
@@ -502,6 +773,7 @@ app.post('/api/vessels', auth(), async (req, res) => {
     vessel_name,
     owner_name,
     barangay,
+    engine_gear,
     userId: req.user.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -520,6 +792,7 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
   const vessel_name = normalizeText(req.body.vessel_name)
   const owner_name = normalizeText(req.body.owner_name)
   const barangay = normalizeText(req.body.barangay)
+  const engine_gear = normalizeText(req.body.engine_gear)
   if (!vessel_registration_number || !vessel_name || !owner_name || !barangay) {
     return res.status(400).json({ error: 'All vessel fields are required' })
   }
@@ -533,6 +806,7 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
     vessel_name,
     owner_name,
     barangay,
+    engine_gear,
     updatedAt
   }).write()
 
@@ -656,9 +930,20 @@ app.get('/api/catches/me', auth(), async (req, res) => {
 })
 
 app.get('/api/catches', auth('admin'), async (req, res) => {
-  const { userId, from, to } = req.query
+  const { userId, vesselId, from, to } = req.query
   let allC = catchesDb.get('catches').value()
   if (userId) allC = allC.filter(c => c.userId === userId)
+  if (vesselId && vesselId !== '__unassigned__') {
+    const vid = String(vesselId)
+    allC = allC.filter(c => {
+      const cVid = c.vesselId ? String(c.vesselId) : null
+      const cReg = c.vesselRegistrationNumber ? String(c.vesselRegistrationNumber).trim().toLowerCase() : null
+      const cName = c.vesselName ? String(c.vesselName).trim().toLowerCase() : null
+      return cVid === vid || cReg === vid.trim().toLowerCase() || cName === vid.trim().toLowerCase()
+    })
+  } else if (vesselId === '__unassigned__') {
+    allC = allC.filter(c => !c.vesselId && !c.vessel && !c.vesselName && !c.vesselRegistrationNumber)
+  }
   if (from) allC = allC.filter(c => new Date(c.capturedAt || c.createdAt) >= new Date(from))
   if (to) allC = allC.filter(c => new Date(c.capturedAt || c.createdAt) <= new Date(to))
   const allU = usersDb.get('users').value()
@@ -733,30 +1018,73 @@ app.delete('/api/catches/:id', auth(), async (req, res) => {
 
 app.get('/api/admin/catches/summary', auth('admin'), async (req, res) => {
   const allC = catchesDb.get('catches').value()
-  const allU = usersDb.get('users').value()
-  const byUser = new Map()
+  const allV = vesselsDb.get('vessels').value() || []
+  const lookupVesselInfo = (c) => {
+    if (c.vesselId) {
+      const v = allV.find(x => x.id === c.vesselId)
+      if (v) return {
+        vesselId: v.id,
+        ownerName: v.owner_name || c.ownerName || null,
+        barangay: v.barangay || c.barangay || null,
+        registrationNumber: v.vessel_registration_number || c.vesselRegistrationNumber || null,
+        vesselName: v.vessel_name || c.vesselName || c.vessel || null
+      }
+    }
+    return {
+      vesselId: c.vesselId || null,
+      ownerName: c.ownerName || null,
+      barangay: c.barangay || null,
+      registrationNumber: c.vesselRegistrationNumber || null,
+      vesselName: c.vesselName || c.vessel || null
+    }
+  }
+  const byVessel = new Map()
   allC.forEach(c => {
-    const uid = String(c.userId || 'unknown')
-    const cur = byUser.get(uid)
+    const info = lookupVesselInfo(c)
+    const rawKey = [
+      info.vesselId || '',
+      info.registrationNumber || '',
+      info.vesselName || '',
+      info.ownerName || ''
+    ].join('||')
+    let key
+    if (info.vesselId) key = 'id:' + info.vesselId
+    else if (info.registrationNumber) key = 'reg:' + info.registrationNumber
+    else if (info.vesselName) key = 'name:' + info.vesselName
+    else key = '__unassigned__'
     const t = new Date(c.capturedAt || c.createdAt || 0).getTime()
-    if (!cur || t > cur._t) {
-      const next = { ...c, _t: t, total: (cur ? cur.total : 0) + 1 }
-      byUser.set(uid, next)
+    const cur = byVessel.get(key)
+    if (!cur) {
+      byVessel.set(key, {
+        vesselId: info.vesselId,
+        ownerName: info.ownerName,
+        barangay: info.barangay,
+        registrationNumber: info.registrationNumber,
+        vesselName: info.vesselName,
+        latestSpecies: c.species || null,
+        latestCapturedAt: c.capturedAt || c.createdAt,
+        _t: t,
+        totalCatches: 1,
+        latestUserId: c.userId || null
+      })
     } else {
-      cur.total = (cur ? cur.total : 0) + 1
+      cur.totalCatches += 1
+      if (t > cur._t) {
+        cur._t = t
+        cur.latestSpecies = c.species || null
+        cur.latestCapturedAt = c.capturedAt || c.createdAt
+        cur.latestUserId = c.userId || null
+      }
+      if (!cur.ownerName && info.ownerName) cur.ownerName = info.ownerName
+      if (!cur.barangay && info.barangay) cur.barangay = info.barangay
+      if (!cur.registrationNumber && info.registrationNumber) cur.registrationNumber = info.registrationNumber
+      if (!cur.vesselName && info.vesselName) cur.vesselName = info.vesselName
+      if (!cur.vesselId && info.vesselId) cur.vesselId = info.vesselId
     }
   })
-  const out = Array.from(byUser.values()).map(c => {
-    const u = allU.find(x => x.id === c.userId)
-    return {
-      userId: c.userId,
-      userName: u ? u.name : null,
-      userEmail: u ? u.email : null,
-      barangay: u ? (u.barangay || null) : null,
-      latestSpecies: c.species || null,
-      latestCapturedAt: c.capturedAt || c.createdAt,
-      totalCatches: c.total
-    }
+  const out = Array.from(byVessel.values()).map(x => {
+    const { _t, ...rest } = x
+    return rest
   }).sort((a, b) => {
     const aT = a.latestCapturedAt ? new Date(a.latestCapturedAt).getTime() : 0
     const bT = b.latestCapturedAt ? new Date(b.latestCapturedAt).getTime() : 0
@@ -939,7 +1267,7 @@ app.post('/api/admin/users', auth('admin'), async (req, res) => {
   let { name, email, password, role } = req.body
   if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' })
   email = String(email).trim().toLowerCase()
-  const exists = usersDb.get('users').find(u => String(u.email||'').trim().toLowerCase() === email).value()
+  const exists = findUserByEmail(usersDb.get('users').value() || [], email)
   if (exists) return res.status(409).json({ error: 'Email exists' })
   const roleSafe = ['admin','inspector','fisher','researcher'].includes((role||'').toLowerCase()) ? role.toLowerCase() : 'fisher'
   const user = { id: nanoid(), name, email, pass: bcrypt.hashSync(password, 10), role: roleSafe, createdAt: new Date().toISOString() }
@@ -1728,6 +2056,114 @@ app.patch('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
 app.delete('/api/admin/protected_areas/:id', auth('admin'), (req, res) => {
   const id = req.params.id
   protectedAreasDb.set('protected_areas', protectedAreasDb.get('protected_areas').filter(p => p.id !== id).value()).write(); res.json({ ok: true })
+})
+
+/* ---------- Vercel AI SDK routes (AI Gateway activates on Vercel deploy) ---------- */
+let _ai = null
+let _openai = null
+let _anthropic = null
+try { _ai = require('ai') } catch (e) { console.warn('[ai] ai package not installed:', e && e.message) }
+try { _openai = require('@ai-sdk/openai') } catch (e) { console.warn('[ai] @ai-sdk/openai not installed:', e && e.message) }
+try { _anthropic = require('@ai-sdk/anthropic') } catch (e) { console.warn('[ai] @ai-sdk/anthropic not installed:', e && e.message) }
+
+function _pickAiModel() {
+  if (!_ai) return null
+  if (process.env.OPENAI_API_KEY && _openai && typeof _openai.openai === 'function') {
+    try { return _openai.openai(process.env.OPENAI_MODEL || 'gpt-4o-mini') } catch (e) { console.warn('[ai] openai() factory failed:', e && e.message) }
+  }
+  if (process.env.ANTHROPIC_API_KEY && _anthropic && typeof _anthropic.anthropic === 'function') {
+    try { return _anthropic.anthropic(process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20240620') } catch (e) { console.warn('[ai] anthropic() factory failed:', e && e.message) }
+  }
+  return null
+}
+
+const BFAR_AI_SYSTEM_CHAT = `You are a helpful BFAR (Bureau of Fisheries and Aquatic Resources, Philippines) field assistant. 
+Answer questions about: vessel registration, catch size limits, protected/endangered species, 
+BFAR reporting deadlines, zoning for municipal vs commercial waters, and Philippine fisheries law.
+Keep answers concise (under 250 words when possible). If you reference law, cite specific Republic Acts 
+(e.g. RA 8550 Philippine Fisheries Code of 1998, RA 10654 amendments, RA 9147 Wildlife Act) when relevant. 
+Do NOT fabricate specific section numbers if you are not confident — say "please cross-check with the latest BFAR AO (Administrative Order)" instead.`
+
+const BFAR_AI_SYSTEM_CATCH_ANALYSIS = `You are a BFAR fisheries compliance and stock-health analyst (Philippines).
+Return ONLY a valid JSON object with keys:
+  "summary":      one-paragraph plain text (< 160 chars),
+  "bfarNotes":    one-paragraph regulatory notes mentioning RA 8550 / RA 10654 / Wildlife Act / BFAR AO if applicable,
+  "stockHealth":  one of: "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN",
+  "recommendedActions": array of 0-4 short string actions an inspector could take next (<= 80 chars each).
+No markdown fences, no extra commentary. Strict JSON only.`
+
+app.post('/api/ai/chat', auth(), async (req, res) => {
+  const model = _pickAiModel()
+  if (!model || !_ai) return res.status(503).json({ error: 'AI not configured. Add OPENAI_API_KEY or ANTHROPIC_API_KEY to environment.' })
+  const { messages = [] } = req.body || {}
+  try {
+    const { streamText } = _ai
+    const result = streamText({
+      model,
+      system: BFAR_AI_SYSTEM_CHAT,
+      messages: Array.isArray(messages) ? messages : [],
+      temperature: 0.2,
+      maxSteps: 1,
+      onFinish: ({ usage, finishReason }) => {
+        try { console.log(`[ai/chat] user=${req.user && req.user.id} finish=${finishReason} usage=${JSON.stringify(usage)}`) } catch {}
+      },
+    })
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.setHeader('Transfer-Encoding', 'chunked')
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.flushHeaders && res.flushHeaders()
+    for await (const chunk of result.textStream) {
+      if (chunk) res.write(chunk)
+    }
+    res.end()
+  } catch (err) {
+    try { console.error('[ai/chat] error', err && err.stack || err) } catch {}
+    if (res.headersSent) { try { res.end() } catch {} }
+    else res.status(500).json({ error: (err && err.message) || String(err) })
+  }
+})
+
+app.post('/api/ai/catch-analysis', auth(), async (req, res) => {
+  const model = _pickAiModel()
+  if (!model || !_ai) return res.status(503).json({ error: 'AI not configured. Add OPENAI_API_KEY or ANTHROPIC_API_KEY to environment.' })
+  const { species = '', weightKg = null, location = '', notes = '', capturedAt = '' } = req.body || {}
+  try {
+    const { generateText } = _ai
+    const promptLines = [
+      'Inspect this catch report from a BFAR field inspector and return the strict JSON shape requested in system.',
+      `species: ${species || '(not provided)'}`,
+      `weightKg: ${weightKg === null || weightKg === '' ? '(not provided)' : String(weightKg)}`,
+      `capturedAt: ${capturedAt || '(not provided)'}`,
+      `location: ${location || '(not provided)'}`,
+      `inspector notes: ${notes || '(none)'}`,
+      `reporter userId: ${req.user && req.user.id} (${req.user && req.user.role})`,
+    ]
+    const { text, usage, finishReason } = await generateText({
+      model,
+      system: BFAR_AI_SYSTEM_CATCH_ANALYSIS,
+      prompt: promptLines.join('\n'),
+      temperature: 0.2,
+      maxRetries: 1,
+    })
+    let analysis
+    try {
+      const cleaned = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
+      analysis = JSON.parse(cleaned)
+    } catch {
+      analysis = {
+        summary: (text || '').slice(0, 160),
+        bfarNotes: '',
+        stockHealth: 'UNKNOWN',
+        recommendedActions: [],
+        _rawText: text,
+      }
+    }
+    try { console.log(`[ai/catch-analysis] user=${req.user && req.user.id} finish=${finishReason} usage=${JSON.stringify(usage)}`) } catch {}
+    res.json({ ok: true, usage: usage || null, analysis })
+  } catch (err) {
+    try { console.error('[ai/catch-analysis] error', err && err.stack || err) } catch {}
+    res.status(500).json({ error: (err && err.message) || String(err) })
+  }
 })
 
 app.use((err, req, res, next) => {

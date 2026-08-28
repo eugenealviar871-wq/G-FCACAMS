@@ -219,6 +219,7 @@
       .collapsible.open .chev { transform: rotate(90deg); color: var(--primary); }
       .collapsible-content { overflow: hidden; max-height: 0; opacity: 0; transition: max-height 0.3s ease, opacity 0.3s ease; }
       .collapsible.open .collapsible-content { max-height: 1000px; opacity: 1; margin-top: 16px; }
+      @media (max-width: 960px) { .ai_assist_grid { grid-template-columns: 1fr !important; } }
 
       .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; padding: 20px; background: var(--background); border-radius: 12px; border: 1px solid var(--border); }
       .grid-form input, .grid-form select, .grid-form button { margin: 0; width: 100%; }
@@ -295,6 +296,8 @@
           <button data-module="my_catches" onclick="showModule('my_catches')"><i class="fa-solid fa-clipboard-list icon"></i> Catches</button>
           <button data-module="activity" onclick="showModule('activity')"><i class="fa-solid fa-water icon"></i> Coastal Activity</button>
           <button data-module="reports" onclick="showModule('reports')"><i class="fa-solid fa-chart-pie icon"></i> Reports</button>
+          <button data-module="ai_assistant" onclick="showModule('ai_assistant')"><i class="fa-solid fa-robot icon"></i> BFAR AI Assistant</button>
+          <button data-module="recommendations" onclick="showModule('recommendations')"><i class="fa-solid fa-lightbulb icon"></i> Recommendations</button>
         </div>
       </div>
       <div id="content">
@@ -444,7 +447,7 @@
           </div>
 
           <div style="margin-bottom:20px">
-            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Method & Gear</h3>
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Method & Engine</h3>
             <div class="grid-form" style="margin-bottom:0">
                 <div style="grid-column:1/-1">
                 <label class="small"><i class="fa-solid fa-network-wired"></i> Net Type</label>
@@ -471,7 +474,7 @@
                 </datalist>
                 </div>
                 <div>
-                <label class="small"><i class="fa-solid fa-gears"></i> Engine/Gear</label>
+                <label class="small"><i class="fa-solid fa-gears"></i> Engine</label>
                 <input id="gear" placeholder="e.g., 16HP" />
                 </div>
                 <div>
@@ -526,6 +529,14 @@
           <div class="grid-form" style="grid-template-columns: 1fr 1fr; background:transparent; border:none; padding:0; gap:16px">
             <button id="btn_submit_catch" onclick="logCatch()" disabled style="height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-paper-plane" style="font-size:18px"></i> Submit Catch</button>
             <button id="btn_upload_catch" onclick="uploadCatch()" disabled style="background:var(--surface); color:var(--primary); border:1px solid var(--border); height:auto; padding:12px; display:flex; flex-direction:column; align-items:center; gap:6px"><i class="fa-solid fa-cloud-arrow-up" style="font-size:18px"></i> Upload + EXIF</button>
+          </div>
+          <div style="margin-top:14px">
+            <button id="btn_analyze_catch_ai" type="button" onclick="analyzeCatchWithAI()"
+              style="width:100%; height:auto; padding:12px; border-radius:12px; border:1.5px dashed #0369a1; background:#eff6ff; color:#075985; font-weight:700; cursor:pointer; display:flex; justify-content:center; gap:10px; align-items:center">
+              <i class="fa-solid fa-wand-magic-sparkles" style="font-size:17px"></i>
+              Analyze Catch with BFAR AI (Compliance + Stock Health)
+            </button>
+            <div id="catch_ai_result" style="display:none; margin-top:14px; padding:14px 16px; border-radius:12px; border:1px solid var(--border); background:var(--surface)"></div>
           </div>
           <div id="catch_msg" class="small" style="margin-top:8px; text-align:center">Waiting for location signal...</div>
         </div>
@@ -600,6 +611,86 @@
           </div>
           <div style="overflow:auto">
             <table id="user_vessels_table"></table>
+          </div>
+        </div>
+
+        <div class="card" id="ai_assistant" style="display:none">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px">
+            <h2 style="margin:0"><i class="fa-solid fa-robot" style="color:var(--primary)"></i> BFAR AI Assistant</h2>
+            <span class="small" style="background:#eff6ff; color:#075985; padding:4px 10px; border-radius:999px; border:1px solid #bfdbfe">Vercel AI SDK · Powered by OpenAI / Anthropic</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1.15fr 1fr; gap:18px" class="ai_assist_grid">
+            <div style="display:flex; flex-direction:column; gap:12px; min-height:560px">
+              <div class="card" style="margin:0; padding:16px; flex:1; display:flex; flex-direction:column; gap:12px; background:var(--background)">
+                <div style="display:flex; align-items:center; justify-content:space-between">
+                  <h3 style="margin:0; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); font-weight:700"><i class="fa-solid fa-comments" style="color:var(--primary)"></i> Chat</h3>
+                  <button type="button" class="small" style="background:transparent; border:1px solid var(--border); color:var(--text-muted); border-radius:999px; padding:4px 10px; cursor:pointer" onclick="clearAIChat()">Clear</button>
+                </div>
+                <div id="ai_chat_messages" style="flex:1; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px 8px 2px; min-height:220px">
+                  <div style="align-self:flex-start; max-width:85%; background:#eff6ff; color:#0c4a6e; padding:10px 12px; border-radius:12px 12px 12px 4px; border:1px solid #bfdbfe; font-size:13.5px; line-height:1.5">
+                    👋 Hi! Ask me about <b>Philippine fisheries law</b> (RA 8550 / RA 10654 / RA 9147), BFAR reporting deadlines, protected species, municipal vs commercial zoning, vessel registration, or catch size limits.
+                  </div>
+                </div>
+                <div style="display:flex; gap:8px; align-items:flex-end">
+                  <textarea id="ai_chat_input" rows="2" placeholder="e.g. Is it legal to catch juvenile Yellowfin Tuna below 40cm in municipal waters?" style="resize:vertical; min-height:48px; flex:1; border-radius:12px; padding:10px 12px; font-size:14px" onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendAIChat(); }"></textarea>
+                  <button id="ai_chat_send" onclick="sendAIChat()" style="height:48px; border-radius:12px; padding:0 18px; background:var(--primary); color:white; border:none; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:6px; white-space:nowrap"><i class="fa-solid fa-paper-plane"></i> Send</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:18px">
+              <div class="card" style="margin:0; padding:16px; background:var(--background)">
+                <h3 style="margin:0 0 12px 0; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); font-weight:700"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--success)"></i> Quick Catch Analysis</h3>
+                <div class="grid-form" style="margin:0; gap:10px; background:transparent; border:none; padding:0">
+                  <div>
+                    <label class="small"><i class="fa-solid fa-fish-fins"></i> Species</label>
+                    <input id="ai_quick_species" placeholder="e.g., Tuna (Yellowfin)" />
+                  </div>
+                  <div>
+                    <label class="small"><i class="fa-solid fa-weight-hanging"></i> Weight (kg)</label>
+                    <input id="ai_quick_weight" type="number" step="0.01" placeholder="e.g., 120" />
+                  </div>
+                  <div>
+                    <label class="small"><i class="fa-solid fa-location-dot"></i> Location / Site</label>
+                    <input id="ai_quick_location" placeholder="e.g., Davao Gulf, 10m from shore" />
+                  </div>
+                  <div>
+                    <label class="small"><i class="fa-solid fa-calendar"></i> Captured</label>
+                    <input id="ai_quick_captured" type="datetime-local" />
+                  </div>
+                  <div style="grid-column:1 / -1">
+                    <label class="small"><i class="fa-solid fa-note-sticky"></i> Notes (optional)</label>
+                    <input id="ai_quick_notes" placeholder="Vessel type, net used, bycatch, maturity…" />
+                  </div>
+                </div>
+                <button type="button" id="ai_quick_btn" onclick="quickCatchAnalysis()" style="width:100%; margin-top:12px; padding:11px; border-radius:12px; background:linear-gradient(135deg,#0369a1,#0891b2); color:white; border:none; cursor:pointer; font-weight:700"><i class="fa-solid fa-bolt"></i> Run Analysis</button>
+                <div id="ai_quick_result" style="display:none; margin-top:12px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:var(--surface)"></div>
+              </div>
+
+              <div class="card" style="margin:0; padding:14px 16px; background:linear-gradient(180deg,#0c4a6e,#0f172a); color:#e0f2fe; border:1px solid #0369a1">
+                <h3 style="margin:0 0 8px 0; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:#7dd3fc; font-weight:800"><i class="fa-solid fa-lightbulb"></i> Tips</h3>
+                <ul class="small" style="margin:0; padding-left:18px; line-height:1.65; color:#bae6fd">
+                  <li>In Log Catch, click <b style="color:#fff">Analyze Catch with BFAR AI</b> to prefill from the current form.</li>
+                  <li>Deployment activates the <b>Vercel AI Gateway</b> — usage logs, token counts, caching, and rate limiting appear in the Vercel Project → <b>AI</b> tab.</li>
+                  <li>Set env vars: <code style="background:#022c43; color:#fde68a; padding:1px 6px; border-radius:4px">OPENAI_API_KEY</code> or <code style="background:#022c43; color:#fde68a; padding:1px 6px; border-radius:4px">ANTHROPIC_API_KEY</code>.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="recommendations" style="display:none">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px">
+            <h2 style="margin:0"><i class="fa-solid fa-lightbulb" style="color:#ff9500"></i> Recommendations</h2>
+            <span class="small" style="background:#fff7ed; color:#9a3412; padding:4px 10px; border-radius:999px; border:1px solid #fed7aa">BFAR · RA 8550 Compliance & Catch-Based Tips</span>
+          </div>
+          <div id="recs_cards_wrap" style="overflow-x:auto; padding-bottom:8px">
+            <div id="recs_cards" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px"></div>
+          </div>
+          <div id="recs_empty" style="display:none; margin-top:16px; padding:24px; text-align:center; border:1px dashed var(--border); border-radius:12px; color:var(--text-muted)">
+            <i class="fa-solid fa-check-circle" style="font-size:36px; color:var(--success); margin-bottom:8px"></i>
+            <p style="margin:0; font-weight:600; color:var(--text-main)">All caught up! No recommendations right now.</p>
           </div>
         </div>
 
@@ -762,6 +853,31 @@
         try { if (window._liveES) { window._liveES.close(); window._liveES = null } } catch {}
         location.href = '/login.html'
       }
+      // Ingest OAuth callback ?token=&user= before redirect check
+      (function ingestGoogleAuthParams() {
+        try {
+          const params = new URLSearchParams(location.search)
+          const token = params.get('token')
+          const userRaw = params.get('user')
+          if (token) {
+            localStorage.setItem('fish_token', token)
+            state.token = token
+          }
+          if (userRaw) {
+            try {
+              const user = JSON.parse(userRaw)
+              localStorage.setItem('fish_user', JSON.stringify(user))
+              state.user = user
+            } catch (e) {}
+          }
+          if (token || userRaw) {
+            const u = new URL(location.href)
+            u.searchParams.delete('token')
+            u.searchParams.delete('user')
+            window.history.replaceState({}, document.title, u.toString())
+          }
+        } catch (e) {}
+      })()
       
       // Redirect if not logged in
       if (!state.token) {
@@ -1595,7 +1711,7 @@
 
       
       function showModule(id) {
-        const ids = ['dashboard','tracking','vessels','catch','my_catches','activity','reports']
+        const ids = ['dashboard','tracking','vessels','catch','my_catches','activity','reports','ai_assistant','recommendations']
         ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
         state.currentModule = id
         const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
@@ -1626,6 +1742,10 @@
             
             if (id === 'activity') { 
               try { loadMyActivity(); updateRouteMap() } catch {} 
+            }
+
+            if (id === 'recommendations') {
+              loadRecommendations()
             }
           }, 300)
         })
@@ -2009,6 +2129,308 @@
         const isPass = i.type === 'password'
         i.type = isPass ? 'text' : 'password'
         b.textContent = isPass ? '🔓' : '🔒'
+      }
+
+      /* ---------- Vercel AI SDK (BFAR AI Assistant) ---------- */
+
+      function _aiAuth() {
+        const token = (state && state.token) || localStorage.getItem('fish_token')
+        if (!token) alert('Please login first to use the BFAR AI Assistant.');
+        return token || null
+      }
+
+      function _aiHeaders() {
+        const token = (state && state.token) || localStorage.getItem('fish_token')
+        return token ? { 'Authorization': 'Bearer ' + token } : {}
+      }
+
+      function _renderAnalysisCard(a) {
+        const color = a && a.stockHealth === 'HIGH' ? '#22c55e' : a && a.stockHealth === 'MEDIUM' ? '#f59e0b' : a && a.stockHealth === 'LOW' ? '#ef4444' : '#94a3b8'
+        return `
+          <div style="margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
+            <b style="font-size:13px; color:var(--text-main)">Stock Health</b>
+            <span style="display:inline-flex; align-items:center; gap:6px; color:${color}; font-weight:800; background:${color}22; border:1px solid ${color}66; padding:3px 10px; border-radius:999px; font-size:12px; letter-spacing:.5px; text-transform:uppercase">${a && a.stockHealth || 'UNKNOWN'}</span>
+          </div>
+          <div class="small" style="color:var(--text-main); margin:6px 0 10px 0; background:var(--background); padding:10px 12px; border-radius:10px; line-height:1.55"><b>Summary: </b>${a && a.summary || '—'}</div>
+          <div class="small" style="color:var(--text-muted); margin:0 0 8px 0; line-height:1.55"><b style="color:var(--text-main)">BFAR Notes: </b>${a && a.bfarNotes || '—'}</div>
+          ${Array.isArray(a && a.recommendedActions) && a.recommendedActions.length ? `<div class="small" style="margin-top:6px"><b style="color:var(--text-main)">Recommended Actions:</b><ul style="margin:6px 0 0 0; padding-left:20px; line-height:1.6; color:var(--text-main)">${a.recommendedActions.map(x => `<li>${String(x).replace(/</g,'&lt;')}</li>`).join('')}</ul></div>` : ''}
+        `
+      }
+
+      async function quickCatchAnalysis() {
+        const token = _aiAuth(); if (!token) return
+        const species = (document.getElementById('ai_quick_species') || {}).value || ''
+        const weightKgRaw = (document.getElementById('ai_quick_weight') || {}).value
+        const weightKg = weightKgRaw === '' ? null : Number(weightKgRaw)
+        const location = (document.getElementById('ai_quick_location') || {}).value || ''
+        const capturedAt = (document.getElementById('ai_quick_captured') || {}).value || ''
+        const notes = (document.getElementById('ai_quick_notes') || {}).value || ''
+        if (!species && (weightKg === null || isNaN(weightKg)) && !location && !notes) {
+          alert('Please fill at least one field (species, weight, location, or notes).')
+          return
+        }
+        const out = document.getElementById('ai_quick_result')
+        if (!out) return
+        out.style.display = ''; out.innerHTML = '<div class="small" style="color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin" style="color:var(--primary)"></i> Running analysis via Vercel AI…</div>'
+        try {
+          const r = await fetch('/api/ai/catch-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+            body: JSON.stringify({ species, weightKg, location, notes, capturedAt })
+          })
+          const data = await r.json().catch(() => ({}))
+          if (!r.ok) { out.innerHTML = `<div style="color:#b91c1c"><b>Error ${r.status}:</b> ${data && data.error || 'Request failed'}</div>`; return }
+          out.innerHTML = _renderAnalysisCard(data && data.analysis || {})
+          if (data && data.usage) {
+            out.insertAdjacentHTML('beforeend', `<div class="small" style="margin-top:10px; color:var(--text-muted); font-size:11px">Usage tokens: ${JSON.stringify(data.usage)}</div>`)
+          }
+        } catch (e) {
+          out.innerHTML = `<div style="color:#b91c1c"><b>Error:</b> ${String(e && e.message || e)}</div>`
+        }
+      }
+
+      async function analyzeCatchWithAI() {
+        const token = _aiAuth(); if (!token) return
+        const species = (document.getElementById('species') || {}).value || ''
+        const weightKgRaw = (document.getElementById('weight') || {}).value
+        const weightKg = weightKgRaw === '' ? null : Number(weightKgRaw)
+        const note = (document.getElementById('note') || {}).value || ''
+        const coordsTxt = (document.getElementById('catch_coords_text') || {}).textContent || ''
+        const capturedAt = new Date().toISOString()
+        const vesselName = (document.getElementById('catch_vessel_name') || {}).value || ''
+        const netType = (document.getElementById('netType') || {}).value || ''
+        const gear = (document.getElementById('gear') || {}).value || ''
+        const vesselPart = vesselName ? ('Vessel: ' + vesselName) : ''
+        const netGearPart = netType ? ('Net type: ' + netType) : ''
+        const enginePart = gear ? ('Engine: ' + gear) : ''
+        const notes = [note, vesselPart, netGearPart, enginePart].filter(Boolean).join('; ')
+        const out = document.getElementById('catch_ai_result')
+        if (!out) return
+        out.style.display = ''; out.innerHTML = '<div class="small" style="color:var(--text-muted)"><i class="fa-solid fa-spinner fa-spin" style="color:var(--primary)"></i> Analyzing current form via Vercel AI…</div>'
+        let qi = document.getElementById('ai_quick_species'); if (qi) qi.value = species
+        qi = document.getElementById('ai_quick_weight'); if (qi) qi.value = (weightKg === null || isNaN(weightKg)) ? '' : weightKg
+        qi = document.getElementById('ai_quick_location'); if (qi) qi.value = coordsTxt
+        qi = document.getElementById('ai_quick_notes'); if (qi) qi.value = note
+        qi = document.getElementById('ai_quick_captured'); if (qi) { try { qi.value = new Date().toISOString().slice(0, 16) } catch {} }
+        try {
+          const r = await fetch('/api/ai/catch-analysis', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+            body: JSON.stringify({ species, weightKg, location: coordsTxt, notes, capturedAt })
+          })
+          const data = await r.json().catch(() => ({}))
+          if (!r.ok) { out.innerHTML = `<div style="color:#b91c1c"><b>Error ${r.status}:</b> ${data && data.error || 'Request failed. If status is 503, set OPENAI_API_KEY / ANTHROPIC_API_KEY in env.'}</div>`; return }
+          out.innerHTML = _renderAnalysisCard(data && data.analysis || {})
+          if (data && data.usage) {
+            out.insertAdjacentHTML('beforeend', `<div class="small" style="margin-top:10px; color:var(--text-muted); font-size:11px">Usage: ${JSON.stringify(data.usage)}</div>`)
+          }
+        } catch (e) {
+          out.innerHTML = `<div style="color:#b91c1c"><b>Error:</b> ${String(e && e.message || e)}</div>`
+        }
+      }
+
+      function clearAIChat() {
+        const box = document.getElementById('ai_chat_messages');
+        if (!box) return
+        box.innerHTML = `<div style="align-self:flex-start; max-width:85%; background:#eff6ff; color:#0c4a6e; padding:10px 12px; border-radius:12px 12px 12px 4px; border:1px solid #bfdbfe; font-size:13.5px; line-height:1.5">👋 Chat cleared. Ask me anything about BFAR rules, regulations, zoning, or catch limits.</div>`
+      }
+
+      const _REC_DISMISS_KEY = 'bfar_dismissed_recs_v1'
+      function _getDismissedRecs() {
+        try { const raw = localStorage.getItem(_REC_DISMISS_KEY); return new Set(raw ? JSON.parse(raw) : []) } catch(e){ return new Set() }
+      }
+      function _setDismissed(id) {
+        const s = _getDismissedRecs()
+        s.add(id)
+        try { localStorage.setItem(_REC_DISMISS_KEY, JSON.stringify(Array.from(s))) } catch(e){}
+      }
+      function _renderRecCard(rec, canDismiss) {
+        const SEVERITY_STYLES = {
+          info:    { bg:'#0f172a', border:'#1e293b', title:'#f8fafc', sub:'#cbd5e1', icon:'#38bdf8', iconBox:'#0c4a6e' },
+          warn:    { bg:'#1c1917', border:'#292524', title:'#fef3c7', sub:'#fde68a', icon:'#f59e0b', iconBox:'#78350f' },
+          success: { bg:'#052e16', border:'#14532d', title:'#dcfce7', sub:'#bbf7d0', icon:'#34d399', iconBox:'#064e3b' },
+          danger:  { bg:'#450a0a', border:'#7f1d1d', title:'#fee2e2', sub:'#fecaca', icon:'#ef4444', iconBox:'#7f1d1d' }
+        }
+        const st = SEVERITY_STYLES[rec.severity] || SEVERITY_STYLES.info
+        const dismissHtml = canDismiss ? `
+          <button type="button" aria-label="Dismiss" onclick="dismissRecommendation('${rec.id}', this)" style="position:absolute; top:10px; right:10px; width:32px; height:32px; border-radius:50%; border:1px solid ${st.border}; background:${st.bg}; color:${st.sub}; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; line-height:1; font-size:16px" onmouseover="this.style.color='${st.title}';this.style.borderColor='${st.title}'" onmouseout="this.style.color='${st.sub}';this.style.borderColor='${st.border}'">
+            <i class="fa-solid fa-xmark" style="font-size:14px; line-height:1"></i>
+          </button>` : ''
+        return `<div data-rec-id="${rec.id}" style="position:relative; display:flex; gap:14px; align-items:flex-start; padding:22px 22px 22px 20px; border-radius:14px; border:1px solid ${st.border}; background:${st.bg}; color:${st.title}; box-shadow:0 1px 2px rgba(0,0,0,0.3)">
+          ${dismissHtml}
+          <div style="width:42px; height:42px; flex:none; border-radius:10px; background:${st.iconBox}; display:flex; align-items:center; justify-content:center; color:${st.icon}">
+            <i class="fa-solid ${rec.icon}" style="font-size:18px; line-height:1"></i>
+          </div>
+          <div style="flex:1; min-width:0; padding-right:${canDismiss ? '34px' : '0'}">
+            <div style="font-weight:800; font-size:16.5px; line-height:1.35; margin-bottom:6px; letter-spacing:0.1px">${rec.title}</div>
+            <div style="color:${st.sub}; font-size:13.5px; line-height:1.55; letter-spacing:0.1px">${rec.body}</div>
+            ${rec.footer ? `<div style="margin-top:10px; font-size:11.5px; color:${st.sub}; opacity:0.75; text-transform:uppercase; letter-spacing:0.5px"><i class="fa-solid fa-circle-info"></i> ${rec.footer}</div>` : ''}
+          </div>
+        </div>`
+      }
+      function dismissRecommendation(id, btnEl) {
+        _setDismissed(id)
+        const card = (btnEl && btnEl.closest ? btnEl.closest('[data-rec-id]') : null)
+        if (card) {
+          card.style.transition = 'opacity 250ms ease, transform 250ms ease'
+          card.style.opacity = '0'; card.style.transform = 'translateY(4px) scale(0.98)'
+          setTimeout(() => card.remove(), 240)
+        }
+        setTimeout(() => { const c = document.getElementById('recs_cards'); if (c && c.children.length === 0) { const e = document.getElementById('recs_empty'); if (e) e.style.display = '' } }, 300)
+      }
+      async function loadRecommendations() {
+        const wrap = document.getElementById('recs_cards'); if (!wrap) return
+        const empty = document.getElementById('recs_empty'); if (empty) empty.style.display = 'none'
+        const dismissed = _getDismissedRecs()
+        const staticRecs = [
+          { id:'rec_ra8550_sec89', severity:'warn', icon:'fa-scale-balanced',
+            title:'RA 8550 Sec. 89: Catch Size Minimums for Commercial Species',
+            body:'Always verify the legal minimum size before logging high-value commercial species (e.g., Yellowfin Tuna ≥ 70 cm fork length; Skipjack ≥ 30 cm). Undersized individuals must be released and recorded as bycatch with a note.',
+            footer:'Philippine Fisheries Code of 1998' },
+          { id:'rec_municipal_15km', severity:'danger', icon:'fa-location-dot',
+            title:'Commercial Vessels: Stay Outside 15 km From Shoreline (Municipal Waters)',
+            body:'Per RA 8550 Sec. 90, commercial fishing vessels may NOT operate within 15 km from the shoreline of municipal waters unless the municipal council issues a prior written permit. Violations carry heavy fines and license revocation.',
+            footer:'Confirm vessel license zone before each trip' },
+          { id:'rec_season_closed', severity:'warn', icon:'fa-ban',
+            title:'Respect Closed Seasons & Spawning Aggregations (SAGs)',
+            body:'Avoid logging catch of species during their declared spawning seasons: Yellowfin/Bluefin Tuna (Nov–Feb in Davao Gulf), Milkfish (milk fry: Apr–Jun), and Frigate Tuna in shallow bays during full moon windows.',
+            footer:'Match catch date with site-specific SAG windows' },
+          { id:'rec_vessel_registration', severity:'info', icon:'fa-passport',
+            title:'Re-Register All Vessel Changes Before 10 Working Days',
+            body:'Per BFAR MC 2021-0201, any material change in vessel specifications, CFR number, license, or owner details must be filed to BFAR Regional Office within 10 working days. Prevents citation during at-sea boardings.',
+            footer:'Click Vessel Information > Edit to update' },
+          { id:'rec_bycatch_reporting', severity:'success', icon:'fa-book-medical',
+            title:'Report Protected & Bycatch Species Within 72 Hours',
+            body:'Whenever you encounter sea turtles (RA 9147), marine mammals, whale sharks, manta rays, or juvenile megafauna as bycatch, log a Protected Species Encounter report with GPS coordinates, photo (if available), and release method within 72 hours.',
+            footer:'AI Assistant can generate the BFAR form body in 1 click' },
+          { id:'rec_catch_log_accuracy', severity:'info', icon:'fa-file-lines',
+            title:'Log Catch Entries At Sea (Same-Hour) To Prevent Data Drift',
+            body:'Data integrity studies show catches logged > 6 hours after retrieval lose 22% of size/weight accuracy and 40% of GPS coordinates. Tap Start Tracking, then Log Catch immediately after pulling the net.',
+            footer:'Use the Catch form inline "Analyze with BFAR AI" for instant QA' },
+          { id:'rec_stock_rotational', severity:'success', icon:'fa-arrows-rotate',
+            title:'Rotate Fishing Sites — Avoid Consecutive Sets Within 3 NM For 7 Days',
+            body:'For artisanal and small commercial vessels, rotational fishing prevents site-wide stock depletion. If you logged > 2 t of the same species at a single GPS point in the last 3 days, rotate to your backup grounds before re-returning.',
+            footer:'Track past sets via Catches > Date range filter' },
+          { id:'rec_juvenile_release', severity:'danger', icon:'fa-fish',
+            title:'Release All Juvenile & Egg-Bearing Crustaceans Immediately',
+            body:'RA 10654 Sec. 91 strictly prohibits retention of berried (egg-bearing) crabs, prawns, and lobsters. All undersized crustaceans (crab carapace < 10 cm CW, prawn < 16 cm TL) must be released at the capture point. Logged release events improve compliance scores.',
+            footer:'Report in Coastal Activity with method="Live Release"' }
+        ]
+        const finalRecs = staticRecs.filter(r => !dismissed.has(r.id))
+        let catches = []
+        try {
+          const r = await fetch('/api/catches/me', { headers: _aiHeaders() })
+          if (r.ok) catches = await r.json()
+        } catch(e){ console.warn('[Recommendations] /api/catches/me failed:', e && e.message ? e.message : e) }
+        const dynamicRecs = []
+        if (catches && Array.isArray(catches)) {
+          const totalKg = catches.reduce((a,c) => a + (Number(c.weightKg) || 0), 0)
+          const speciesMap = new Map()
+          catches.forEach(c => { const n = (c.species||'Unspecified').toLowerCase(); if (!speciesMap.has(n)) speciesMap.set(n,{kg:0,count:0,last:c.capturedAt}); const x = speciesMap.get(n); x.kg += (Number(c.weightKg) || 0); x.count += 1; if (!x.last || c.capturedAt > x.last) x.last = c.capturedAt })
+          const overWeightSpecies = [...speciesMap.entries()].filter(([,s]) => s.kg >= 1500)
+          overWeightSpecies.forEach(([name, s]) => {
+            const id = 'rec_heavy_' + name.replace(/\W+/g,'_')
+            if (dismissed.has(id)) return
+            dynamicRecs.push({ id, severity:'warn', icon:'fa-weight-hanging',
+              title:('High Recent Volume for '+ (name.charAt(0).toUpperCase()+name.slice(1)) +': '+ (s.kg.toFixed(0)) +' kg'),
+              body:('You have logged '+ s.count +' catches totaling '+ (s.kg.toFixed(0)) +' kg of '+ (name.charAt(0).toUpperCase()+name.slice(1)) +' in your active records. Verify this volume matches the licensed quota for your vessel class and municipality; consider submitting a supplemental stock assessment via BFAR AI Assistant if this is > 80% of monthly cap.'),
+              footer:'Click Run Analysis in Quick Catch with this species' })
+          })
+          const hasTunaOver = [...speciesMap.entries()].some(([n,s]) => (n.includes('tuna') || n.includes('yellowfin') || n.includes('bluefin') || n.includes('skipjack')) && s.kg >= 1000)
+          if (hasTunaOver && !dismissed.has('rec_tuna_chain_of_custody')) {
+            dynamicRecs.push({ id:'rec_tuna_chain_of_custody', severity:'info', icon:'fa-chain',
+              title:'Tuna Chain of Custody Form (BFAR MC 2019-07) — Complete',
+              body:'Your catch log includes ≥ 1 ton of tuna-family species. For export-grade lots attach a complete Catch Certificate, traceability GPS log, and unloading/transshipment slip. Use the AI Assistant to autogenerate the header data with 1 prompt.',
+              footer:'Required for commercial export licensing' })
+          }
+          const now = new Date(); const cutoff = new Date(); cutoff.setDate(now.getDate() - 10)
+          const anyOld = catches.some(c => c.capturedAt && new Date(c.capturedAt) > cutoff && !(c.vesselId || c.vesselName))
+          if (anyOld && !dismissed.has('rec_vessel_link_recent')) {
+            dynamicRecs.push({ id:'rec_vessel_link_recent', severity:'warn', icon:'fa-ship',
+              title:'Link Recent Catches To A Registered Vessel',
+              body:('You have '+ (catches.filter(c=>c.capturedAt&&new Date(c.capturedAt)>cutoff&&!(c.vesselId||c.vesselName)).length) +' catches in the last 10 days without an assigned vessel. BFAR compliance scoring requires each catch to carry a CFR-numbered vessel. Open a catch row, click Edit, and assign the vessel.'),
+              footer:'Open Catches → tap any row → Edit' })
+          }
+          if (totalKg === 0 && !dismissed.has('rec_zero_catch')) {
+            dynamicRecs.unshift({ id:'rec_zero_catch', severity:'info', icon:'fa-plus-circle',
+              title:'Log Your First Catch',
+              body:'No catches detected on your account yet. Start tracking to unlock personal recommendations, stock health reports, and automated compliance reminders.',
+              footer:'Sidebar → Log Catch' })
+          }
+        }
+        dynamicRecs.forEach(r => finalRecs.push(r))
+        wrap.innerHTML = ''
+        if (finalRecs.length === 0) {
+          if (empty) empty.style.display = ''
+          return
+        }
+        finalRecs.forEach(rec => {
+          const row = document.createElement('div')
+          row.innerHTML = _renderRecCard(rec, true)
+          wrap.appendChild(row.children[0])
+        })
+      }
+
+      function _appendChat(role, text) {
+        const box = document.getElementById('ai_chat_messages'); if (!box) return
+        const el = document.createElement('div')
+        const isUser = role === 'user'
+        el.style.alignSelf = isUser ? 'flex-end' : 'flex-start'
+        el.style.maxWidth = '88%'
+        el.style.padding = '10px 12px'
+        el.style.borderRadius = isUser ? '12px 12px 4px 12px' : '12px 12px 12px 4px'
+        el.style.fontSize = '13.5px'
+        el.style.lineHeight = '1.6'
+        el.style.border = isUser ? '1px solid var(--primary)' : '1px solid #bfdbfe'
+        el.style.background = isUser ? 'var(--primary)' : '#eff6ff'
+        el.style.color = isUser ? '#fff' : '#0c4a6e'
+        el.style.whiteSpace = 'pre-wrap'
+        el.textContent = text
+        box.appendChild(el)
+        box.scrollTop = box.scrollHeight
+        return el
+      }
+
+      async function sendAIChat() {
+        const token = _aiAuth(); if (!token) return
+        const input = document.getElementById('ai_chat_input'); if (!input) return
+        const text = (input.value || '').trim(); if (!text) return
+        const sendBtn = document.getElementById('ai_chat_send'); if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.6' }
+        input.value = ''
+        _appendChat('user', text)
+        const assistantEl = _appendChat('assistant', '')
+        assistantEl.textContent = '…'
+        try {
+          const r = await fetch('/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+            body: JSON.stringify({ messages: [{ role: 'user', content: text }] })
+          })
+          if (!r.ok) {
+            const t = await r.text().catch(() => '')
+            let msg = `Error ${r.status}`
+            try { const j = JSON.parse(t); if (j && j.error) msg = j.error } catch {}
+            assistantEl.textContent = '❌ ' + msg + (r.status === 503 ? ' — add OPENAI_API_KEY or ANTHROPIC_API_KEY to env vars.' : '')
+            return
+          }
+          assistantEl.textContent = ''
+          const reader = r.body.getReader()
+          const decoder = new TextDecoder()
+          let buf = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value, { stream: true })
+            assistantEl.textContent = buf
+            const box = document.getElementById('ai_chat_messages')
+            if (box) box.scrollTop = box.scrollHeight
+          }
+        } catch (e) {
+          assistantEl.textContent = '❌ Network error: ' + String(e && e.message || e)
+        } finally {
+          if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = '1' }
+          const box = document.getElementById('ai_chat_messages'); if (box) box.scrollTop = box.scrollHeight
+        }
       }
     </script>
   </body>
