@@ -1,0 +1,3 @@
+{
+  "json.disableImplicitSchemas": ["package.json"]
+}

@@ -1,7 +1,11 @@
 -- =====================================================================
--- BFAR Monitoring — Supabase / Postgres Schema
--- Idempotent. Safe to re-run in the SQL Editor.
---
+-- BFAR Monitoring — Supabase / Postgres Schema — FIXED VERSION
+-- Main fixes:
+--   1. Do not DROP POLICY before the tables exist.
+--   2. Create vessels before catches because catches references vessels(id).
+--   3. Split public SELECT and admin write policies for zones/protected_areas/species.
+-- =====================================================================
+
 -- Supports BOTH authentication models:
 --   1. Supabase GoTrue auth (recommended if you enable it in the project)
 --        profiles.id  = auth.users.id (UUID stored as TEXT)
@@ -16,23 +20,6 @@
 -- =====================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- ---------------------------------------------------------------------
--- Clean slate (idempotent): drop policies FIRST before touching tables
--- ---------------------------------------------------------------------
-DROP POLICY IF EXISTS users_policy              ON public.profiles CASCADE;
-DROP POLICY IF EXISTS profiles_policy           ON public.profiles CASCADE;
-DROP POLICY IF EXISTS catches_policy            ON public.catches  CASCADE;
-DROP POLICY IF EXISTS vessels_policy            ON public.vessels  CASCADE;
-DROP POLICY IF EXISTS tracks_policy             ON public.tracks   CASCADE;
-DROP POLICY IF EXISTS status_events_policy      ON public.status_events CASCADE;
-DROP POLICY IF EXISTS activity_logs_policy      ON public.activity_logs CASCADE;
-DROP POLICY IF EXISTS alerts_policy             ON public.alerts   CASCADE;
-DROP POLICY IF EXISTS zones_policy              ON public.zones    CASCADE;
-DROP POLICY IF EXISTS protected_areas_policy    ON public.protected_areas CASCADE;
-DROP POLICY IF EXISTS species_policy            ON public.species  CASCADE;
-DROP POLICY IF EXISTS images_policy             ON public.images   CASCADE;
-DROP POLICY IF EXISTS push_policy               ON public.push     CASCADE;
 
 -- ---------------------------------------------------------------------
 -- 1. PROFILES (users: inspectors + admin)
@@ -87,52 +74,6 @@ CREATE POLICY profiles_policy ON public.profiles
   );
 
 -- ---------------------------------------------------------------------
--- 2. CATCHES (core: every fish catch logged by an inspector)
--- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.catches (
-  id            TEXT PRIMARY KEY,
-  user_id       TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  vessel_id     TEXT REFERENCES public.vessels(id) ON DELETE SET NULL,
-  species       TEXT NOT NULL,
-  weight        NUMERIC(12,3) NOT NULL CHECK (weight > 0),
-  length_cm     NUMERIC(12,2),
-  net_type      TEXT,
-  gear          TEXT,
-  vessel_registration_number TEXT,
-  vessel_name   TEXT,
-  owner_name    TEXT,
-  image_url     TEXT,
-  latitude      DOUBLE PRECISION,
-  longitude     DOUBLE PRECISION,
-  location      TEXT,
-  note          TEXT,
-  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','rejected')),
-  recorded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  captured_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_catches_user_id     ON public.catches(user_id);
-CREATE INDEX IF NOT EXISTS idx_catches_vessel_id   ON public.catches(vessel_id);
-CREATE INDEX IF NOT EXISTS idx_catches_recorded_at ON public.catches(recorded_at);
-CREATE INDEX IF NOT EXISTS idx_catches_captured_at ON public.catches(captured_at);
-CREATE INDEX IF NOT EXISTS idx_catches_species     ON public.catches(species);
-CREATE INDEX IF NOT EXISTS idx_catches_status      ON public.catches(status);
-
-ALTER TABLE public.catches ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS catches_policy ON public.catches;
-CREATE POLICY catches_policy ON public.catches
-  FOR ALL
-  USING (
-    (current_setting('app.current_role', true) = 'admin')
-    OR (user_id = current_setting('app.current_user_id', true)::TEXT)
-  )
-  WITH CHECK (
-    (current_setting('app.current_role', true) = 'admin')
-    OR (user_id = current_setting('app.current_user_id', true)::TEXT)
-  );
-
--- ---------------------------------------------------------------------
 -- 3. VESSELS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.vessels (
@@ -172,6 +113,52 @@ CREATE TRIGGER vessels_set_updated_at
 
 DROP POLICY IF EXISTS vessels_policy ON public.vessels;
 CREATE POLICY vessels_policy ON public.vessels
+  FOR ALL
+  USING (
+    (current_setting('app.current_role', true) = 'admin')
+    OR (user_id = current_setting('app.current_user_id', true)::TEXT)
+  )
+  WITH CHECK (
+    (current_setting('app.current_role', true) = 'admin')
+    OR (user_id = current_setting('app.current_user_id', true)::TEXT)
+  );
+
+-- ---------------------------------------------------------------------
+-- 2. CATCHES (core: every fish catch logged by an inspector)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.catches (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  vessel_id     TEXT REFERENCES public.vessels(id) ON DELETE SET NULL,
+  species       TEXT NOT NULL,
+  weight        NUMERIC(12,3) NOT NULL CHECK (weight > 0),
+  length_cm     NUMERIC(12,2),
+  net_type      TEXT,
+  gear          TEXT,
+  vessel_registration_number TEXT,
+  vessel_name   TEXT,
+  owner_name    TEXT,
+  image_url     TEXT,
+  latitude      DOUBLE PRECISION,
+  longitude     DOUBLE PRECISION,
+  location      TEXT,
+  note          TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','verified','rejected')),
+  recorded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  captured_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_catches_user_id     ON public.catches(user_id);
+CREATE INDEX IF NOT EXISTS idx_catches_vessel_id   ON public.catches(vessel_id);
+CREATE INDEX IF NOT EXISTS idx_catches_recorded_at ON public.catches(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_catches_captured_at ON public.catches(captured_at);
+CREATE INDEX IF NOT EXISTS idx_catches_species     ON public.catches(species);
+CREATE INDEX IF NOT EXISTS idx_catches_status      ON public.catches(status);
+
+ALTER TABLE public.catches ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS catches_policy ON public.catches;
+CREATE POLICY catches_policy ON public.catches
   FOR ALL
   USING (
     (current_setting('app.current_role', true) = 'admin')
@@ -345,9 +332,16 @@ ALTER TABLE public.zones ENABLE ROW LEVEL SECURITY;
 
 -- Admin manages; inspectors may READ only.
 DROP POLICY IF EXISTS zones_policy ON public.zones;
-CREATE POLICY zones_policy ON public.zones
-  FOR SELECT USING (true)
-  FOR ALL    WITH CHECK (current_setting('app.current_role', true) = 'admin');
+DROP POLICY IF EXISTS zones_select_policy ON public.zones;
+DROP POLICY IF EXISTS zones_admin_policy ON public.zones;
+
+CREATE POLICY zones_select_policy ON public.zones
+  FOR SELECT USING (true);
+
+CREATE POLICY zones_admin_policy ON public.zones
+  FOR ALL
+  USING (current_setting('app.current_role', true) = 'admin')
+  WITH CHECK (current_setting('app.current_role', true) = 'admin');
 
 -- ---------------------------------------------------------------------
 -- 9. PROTECTED AREAS (MPA, critical habitat, etc.)
@@ -365,9 +359,16 @@ CREATE TABLE IF NOT EXISTS public.protected_areas (
 ALTER TABLE public.protected_areas ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS protected_areas_policy ON public.protected_areas;
-CREATE POLICY protected_areas_policy ON public.protected_areas
-  FOR SELECT USING (true)
-  FOR ALL    WITH CHECK (current_setting('app.current_role', true) = 'admin');
+DROP POLICY IF EXISTS protected_areas_select_policy ON public.protected_areas;
+DROP POLICY IF EXISTS protected_areas_admin_policy ON public.protected_areas;
+
+CREATE POLICY protected_areas_select_policy ON public.protected_areas
+  FOR SELECT USING (true);
+
+CREATE POLICY protected_areas_admin_policy ON public.protected_areas
+  FOR ALL
+  USING (current_setting('app.current_role', true) = 'admin')
+  WITH CHECK (current_setting('app.current_role', true) = 'admin');
 
 -- ---------------------------------------------------------------------
 -- 10. SPECIES (reference catalog: names, limits, conservation status)
@@ -389,9 +390,16 @@ CREATE TABLE IF NOT EXISTS public.species (
 ALTER TABLE public.species ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS species_policy ON public.species;
-CREATE POLICY species_policy ON public.species
-  FOR SELECT USING (true)
-  FOR ALL    WITH CHECK (current_setting('app.current_role', true) = 'admin');
+DROP POLICY IF EXISTS species_select_policy ON public.species;
+DROP POLICY IF EXISTS species_admin_policy ON public.species;
+
+CREATE POLICY species_select_policy ON public.species
+  FOR SELECT USING (true);
+
+CREATE POLICY species_admin_policy ON public.species
+  FOR ALL
+  USING (current_setting('app.current_role', true) = 'admin')
+  WITH CHECK (current_setting('app.current_role', true) = 'admin');
 
 -- ---------------------------------------------------------------------
 -- 11. IMAGES (catch evidence, activity proofs, vessel photos)
