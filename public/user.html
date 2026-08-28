@@ -750,14 +750,27 @@
         dashboardMap: null, dashboardMarkers: new Map(), catchChart: null
       }
       
+      let _redirectingToLogin = false
+      function handleAuthFailure() {
+        if (_redirectingToLogin) return
+        _redirectingToLogin = true
+        window._authInvalidated = true
+        try { if (state.watchId != null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null } } catch {}
+        if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
+        state.token = null; state.user = null
+        try { localStorage.removeItem('fish_token'); localStorage.removeItem('fish_user') } catch {}
+        try { if (window._liveES) { window._liveES.close(); window._liveES = null } } catch {}
+        location.href = '/login.html'
+      }
+      
       // Redirect if not logged in
       if (!state.token) {
         location.href = '/login.html';
       } else {
         const initUser = () => {
-          setAuth(state.token, state.user);
-          loadSpecies();
-          enablePush();
+          try { setAuth(state.token, state.user) } catch {}
+          try { loadSpecies() } catch {}
+          try { enablePush() } catch {}
         };
         if (document.readyState === 'loading') {
           window.addEventListener('DOMContentLoaded', initUser);
@@ -1190,6 +1203,7 @@
           const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Failed')
           document.getElementById('catch_msg').textContent = 'Catch logged'; document.getElementById('catch_msg').className = 'small success'
           loadMyCatches()
+          try { refreshDashboard() } catch {}
           resetCatchLocation()
         } catch (e) { document.getElementById('catch_msg').textContent = e.message; document.getElementById('catch_msg').className = 'small error' }
       }
@@ -1214,17 +1228,19 @@
           const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Upload failed')
           document.getElementById('catch_msg').textContent = 'Catch uploaded'; document.getElementById('catch_msg').className = 'small success'
           loadMyCatches()
+          try { refreshDashboard() } catch {}
           resetCatchLocation()
         } catch (e) { document.getElementById('catch_msg').textContent = e.message; document.getElementById('catch_msg').className = 'small error' }
       }
       async function loadMyCatches() {
         try {
           const r = await fetch('/api/catches/me', { headers: { 'Authorization': 'Bearer ' + state.token } })
-          const d = await r.json(); if (!r.ok) throw new Error('Load failed')
-          state.myCatchesData = d
+          if (r.status === 401) { handleAuthFailure(); return }
+          const d = await r.json(); if (!r.ok) return
+          state.myCatchesData = Array.isArray(d) ? d : []
           
           // Populate filter species
-          const speciesSet = new Set(d.map(c => c.species))
+          const speciesSet = new Set(state.myCatchesData.map(c => c.species))
           const sel = document.getElementById('filter_species')
           if (sel) {
              const current = sel.value
@@ -1242,14 +1258,15 @@
       }
 
       function renderMyCatches() {
-        const d = state.myCatchesData || []
-        const fSpec = document.getElementById('filter_species').value
-        const fFrom = document.getElementById('filter_date_from').value
-        const fTo = document.getElementById('filter_date_to').value
+        const raw = state.myCatchesData
+        const d = Array.isArray(raw) ? raw : []
+        const fSpec = (document.getElementById('filter_species') || {}).value || ''
+        const fFrom = (document.getElementById('filter_date_from') || {}).value || ''
+        const fTo = (document.getElementById('filter_date_to') || {}).value || ''
         
         let filtered = d.filter(c => {
            if (fSpec && c.species !== fSpec) return false
-           const date = new Date(c.capturedAt || c.createdAt)
+           const date = new Date(c.capturedAt || c.createdAt || 0)
            if (fFrom && date < new Date(fFrom)) return false
            if (fTo) {
              const toDate = new Date(fTo); toDate.setHours(23,59,59,999)
@@ -1259,7 +1276,7 @@
         })
         
         // Sort by date desc
-        filtered.sort((a,b) => new Date(b.capturedAt || b.createdAt) - new Date(a.capturedAt || a.createdAt))
+        filtered.sort((a,b) => new Date(b.capturedAt || b.createdAt || 0) - new Date(a.capturedAt || a.createdAt || 0))
         
         const countEl = document.getElementById('catches_count')
         if(countEl) countEl.textContent = filtered.length + ' catches found'
@@ -1298,21 +1315,23 @@
       async function loadMyActivity() {
         try {
           const r = await fetch('/api/activity_logs/me', { headers: { 'Authorization': 'Bearer ' + state.token } })
-          const d = await r.json(); if (!r.ok) throw new Error('Load failed')
-          state.myActivityData = d
+          if (r.status === 401) { handleAuthFailure(); return }
+          const d = await r.json(); if (!r.ok) return
+          state.myActivityData = Array.isArray(d) ? d : []
           renderMyActivity()
         } catch {}
       }
 
       function renderMyActivity() {
-        const d = state.myActivityData || []
-        const fCat = document.getElementById('filter_act_cat').value
-        const fFrom = document.getElementById('filter_act_date_from').value
-        const fTo = document.getElementById('filter_act_date_to').value
+        const raw = state.myActivityData
+        const d = Array.isArray(raw) ? raw : []
+        const fCatEl = document.getElementById('filter_act_cat'); const fCat = fCatEl ? fCatEl.value : ''
+        const fFromEl = document.getElementById('filter_act_date_from'); const fFrom = fFromEl ? fFromEl.value : ''
+        const fToEl = document.getElementById('filter_act_date_to'); const fTo = fToEl ? fToEl.value : ''
         
         let filtered = d.filter(a => {
            if (fCat && a.category !== fCat) return false
-           const date = new Date(a.created_at)
+           const date = new Date(a.created_at || 0)
            if (fFrom && date < new Date(fFrom)) return false
            if (fTo) {
              const toDate = new Date(fTo); toDate.setHours(23,59,59,999)
@@ -1321,7 +1340,7 @@
            return true
         })
         
-        filtered.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+        filtered.sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
         
         const countEl = document.getElementById('activity_count')
         if(countEl) countEl.textContent = filtered.length + ' records found'
@@ -1568,7 +1587,8 @@
           const currentInput = document.getElementById('species');
           const current = currentInput ? currentInput.value : ''
           datalist.innerHTML = ''
-          d.forEach(s => { const o = document.createElement('option'); o.value = s; datalist.appendChild(o) })
+          const arr = Array.isArray(d) ? d : []
+          arr.forEach(s => { const o = document.createElement('option'); o.value = s; datalist.appendChild(o) })
           if (current && currentInput) currentInput.value = current
         } catch {}
       }
@@ -1612,16 +1632,14 @@
       }
 
       async function refreshDashboard() {
-        if (!state.token) return
+        if (!state.token || window._authInvalidated) return
         try {
           const r = await fetch('/api/dashboard/stats', { headers: { 'Authorization': 'Bearer ' + state.token } })
           const d = await r.json()
           if (!r.ok) {
             if (r.status === 401) {
-              state.token = null
-              localStorage.removeItem('token')
-              localStorage.removeItem('user')
-              location.href = '/login.html'
+              handleAuthFailure()
+              return
             }
             throw new Error(d.error)
           }
@@ -1634,11 +1652,12 @@
           // Update Top Species
           const tsList = document.getElementById('top_species_list')
           tsList.innerHTML = ''
-          if (d.topSpecies && d.topSpecies.length) {
-            d.topSpecies.forEach((s, idx) => {
+          const topArr = Array.isArray(d.topSpecies) ? d.topSpecies : []
+          if (topArr.length) {
+            topArr.forEach((s, idx) => {
               const row = document.createElement('div')
               row.style = 'display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--border)'
-              if (idx === d.topSpecies.length - 1) row.style.borderBottom = 'none'
+              if (idx === topArr.length - 1) row.style.borderBottom = 'none'
               row.innerHTML = `
                 <div style="font-weight:700; color:var(--primary); width:24px">#${idx+1}</div>
                 <div style="flex:1; font-weight:600">${s.name}</div>
@@ -1656,47 +1675,72 @@
           // Update Map
           updateDashboardMap()
         } catch (e) {
-          console.error('Dashboard refresh error:', e)
+          if (window._authInvalidated) return
+          const msg = (e && e.message) ? String(e.message) : ''
+          const isAbort = (e && (e.name === 'AbortError' || msg === 'Failed to fetch'))
+          const isAuth = msg.indexOf('Invalid token') !== -1 || msg.indexOf('Token') !== -1
+          if (!isAbort && !isAuth) console.error('Dashboard refresh error:', e)
         }
       }
 
+      const PALETTE = ['#0077B6','#00B4D8','#06D6A0','#FFB703','#EF476F','#9B5DE5','#00BBF9','#F15BB5']
       function updateDashboardChart(trend) {
-        const ctx = document.getElementById('catchChart')
-        if (!ctx) return
-        
-        const labels = trend.map(t => t.month)
-        const data = trend.map(t => t.weight)
+        const container = document.getElementById('catchChart')
+        if (!container) return
+        const parent = container.parentElement
+        if (state.catchChart) { state.catchChart.destroy(); state.catchChart = null }
 
-        if (state.catchChart) {
-          state.catchChart.data.labels = labels
-          state.catchChart.data.datasets[0].data = data
-          state.catchChart.update()
-        } else {
-          state.catchChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: labels,
-              datasets: [{
-                label: 'Catch Weight (kg)',
-                data: data,
-                borderColor: '#007aff',
-                backgroundColor: 'rgba(0,122,255,0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4
-              }]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                x: { grid: { display: false } }
-              }
-            }
-          })
+        const months = (trend && Array.isArray(trend.months)) ? trend.months : []
+        const series = (trend && Array.isArray(trend.series)) ? trend.series : []
+
+        if (!months.length || !series.length) {
+          container.style.display = 'none'
+          let msg = parent.querySelector('.catch-empty-msg')
+          if (!msg) {
+            msg = document.createElement('div')
+            msg.className = 'small catch-empty-msg'
+            msg.style = 'display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted)'
+            msg.textContent = 'No recorded catch'
+            parent.appendChild(msg)
+          }
+          return
         }
+
+        container.style.display = ''
+        const msg = parent.querySelector('.catch-empty-msg')
+        if (msg) msg.remove()
+
+        const ctx = container.getContext('2d')
+        const datasets = series.map((s, i) => ({
+          label: s.species,
+          data: s.data,
+          backgroundColor: PALETTE[i % PALETTE.length],
+          borderColor: PALETTE[i % PALETTE.length],
+          borderWidth: 1
+        }))
+
+        state.catchChart = new Chart(ctx, {
+          type: 'bar',
+          data: { labels: months, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: true, position: 'top' },
+              tooltip: {
+                callbacks: {
+                  title: (context) => `Month: ${context[0].label}`,
+                  label: (context) => `${context.dataset.label}: ${context.raw.toFixed(2)} kg`
+                }
+              }
+            },
+            scales: {
+              y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, title: { display: true, text: 'kg' } },
+              x: { grid: { display: false } }
+            }
+          }
+        })
       }
 
       function initDashboardMap() {
@@ -1711,20 +1755,13 @@
         if (!state.dashboardMap || !state.token) return
         try {
           const r = await fetch('/api/live_locations', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          if (r.status === 401) { handleAuthFailure(); return }
           const d = await r.json()
-          if (!r.ok) {
-            if (r.status === 401) {
-              // Token invalid, clear it
-              state.token = null
-              localStorage.removeItem('token')
-              localStorage.removeItem('user')
-              location.href = '/login.html'
-            }
-            return
-          }
+          if (!r.ok) return
+          const arr = Array.isArray(d) ? d : []
 
           // Clear old markers that are no longer active
-          const activeIds = new Set(d.map(p => p.userId))
+          const activeIds = new Set(arr.map(p => p.userId))
           for (const [uid, marker] of state.dashboardMarkers) {
             if (!activeIds.has(uid)) {
               marker.remove()
@@ -1733,7 +1770,7 @@
           }
 
           // Add/Update markers
-          d.forEach(p => {
+          arr.forEach(p => {
             const pos = [p.lat, p.lng]
             if (state.dashboardMarkers.has(p.userId)) {
               state.dashboardMarkers.get(p.userId).setLatLng(pos)
@@ -1747,13 +1784,20 @@
               state.dashboardMarkers.set(p.userId, marker)
             }
           })
+          
+          if (arr.length > 0) {
+            try {
+              const bounds = window.L.latLngBounds(arr.map(p => [p.lat, p.lng]))
+              state.dashboardMap.fitBounds(bounds.pad(0.3), { animate: false })
+            } catch {}
+          }
         } catch {}
       }
 
       function refreshDataUser(){
-        if (!state.token) return
+        if (!state.token || window._authInvalidated) return
         const m = state.currentModule
-        if (m === 'dashboard') refreshDashboard()
+        if (m === 'dashboard') { try { refreshDashboard() } catch {} }
         if (m === 'my_catches') { try { loadMyCatches() } catch {} }
         if (m === 'catch') { try { loadSpecies() } catch {} }
         if (m === 'activity') { try { loadMyActivity() } catch {} }
@@ -1774,23 +1818,22 @@
       async function loadVessels() {
         try {
           const r = await fetch('/api/vessels', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          if (r.status === 401) { handleAuthFailure(); return }
           const d = await r.json()
-          if (!r.ok) throw new Error(d.error)
-          vesselsData = d
+          if (!r.ok) return
+          vesselsData = Array.isArray(d) ? d.sort((a,b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0)) : []
           renderVessels()
           updateCatchVesselOptions()
-        } catch (e) {
-          document.getElementById('vessel_form_msg').textContent = e.message
-          document.getElementById('vessel_form_msg').className = 'small error'
-        }
+        } catch {}
       }
 
-      function renderVessels(vessels = vesselsData) {
+      function renderVessels(vessels) {
         const table = document.getElementById('user_vessels_table')
         const countEl = document.getElementById('vessel_list_count')
-        countEl.textContent = `${vessels.length} vessel${vessels.length !== 1 ? 's' : ''}`
+        const source = Array.isArray(vessels) ? vessels : (Array.isArray(vesselsData) ? vesselsData : [])
+        countEl.textContent = `${source.length} vessel${source.length !== 1 ? 's' : ''}`
         
-        if (!vessels.length) {
+        if (!source.length) {
           table.innerHTML = '<tr><td style="text-align:center; padding:20px; color:var(--text-muted)">No vessels registered yet</td></tr>'
           return
         }
@@ -1804,13 +1847,13 @@
             <th>Created</th>
             <th>Actions</th>
           </tr>
-          ${vessels.map(v => `
+          ${source.map(v => `
             <tr>
-              <td>${v.vessel_registration_number}</td>
-              <td>${v.vessel_name}</td>
-              <td>${v.owner_name}</td>
+              <td>${v.vessel_registration_number || ''}</td>
+              <td>${v.vessel_name || ''}</td>
+              <td>${v.owner_name || ''}</td>
               <td>${v.barangay || ''}</td>
-              <td>${new Date(v.created_at || v.createdAt).toLocaleDateString()}</td>
+              <td>${new Date(v.created_at || v.createdAt || 0).toLocaleDateString()}</td>
               <td>
                 <button onclick="editVessel('${v.id}')" style="padding:4px 8px; font-size:12px; margin-right:4px">Edit</button>
                 <button onclick="confirmDeleteVessel('${v.id}')" style="padding:4px 8px; font-size:12px; background:var(--error); color:white">Delete</button>
@@ -1821,16 +1864,18 @@
       }
 
       function filterUserVessels() {
-        const q = document.getElementById('user_vessel_search').value.toLowerCase().trim()
-        if (!q) {
+        const q = (document.getElementById('user_vessel_search') || {}).value || ''
+        const query = q.toLowerCase().trim()
+        if (!query) {
           renderVessels()
           return
         }
-        const filtered = vesselsData.filter(v => 
-          v.vessel_registration_number.toLowerCase().includes(q) ||
-          v.vessel_name.toLowerCase().includes(q) ||
-          v.owner_name.toLowerCase().includes(q) ||
-          (v.barangay && v.barangay.toLowerCase().includes(q))
+        const src = Array.isArray(vesselsData) ? vesselsData : []
+        const filtered = src.filter(v => 
+          (v.vessel_registration_number || '').toLowerCase().includes(query) ||
+          (v.vessel_name || '').toLowerCase().includes(query) ||
+          (v.owner_name || '').toLowerCase().includes(query) ||
+          (v.barangay || '').toLowerCase().includes(query)
         )
         renderVessels(filtered)
       }
@@ -1923,9 +1968,10 @@
         const datalist = document.getElementById('vesselList')
         if (!datalist) return
         datalist.innerHTML = ''
-        vesselsData.forEach(v => {
+        const src = Array.isArray(vesselsData) ? vesselsData : []
+        src.forEach(v => {
           const opt = document.createElement('option')
-          opt.value = `${v.vessel_name} (${v.vessel_registration_number})`
+          opt.value = `${v.vessel_name || ''} (${v.vessel_registration_number || ''})`
           datalist.appendChild(opt)
         })
       }

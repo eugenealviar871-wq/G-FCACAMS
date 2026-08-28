@@ -29,13 +29,14 @@ create table public.vessels (
   vessel_name text not null,
   owner_name text not null,
   barangay text not null,
+  user_id uuid references public.profiles(id),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 alter table public.vessels enable row level security;
 create policy "Authenticated users can view vessels" on public.vessels for select using (auth.uid() is not null);
-create policy "Authenticated users can insert vessels" on public.vessels for insert with check (auth.uid() is not null);
-create policy "Authenticated users can update vessels" on public.vessels for update using (auth.uid() is not null);
+create policy "Users can insert their own vessels" on public.vessels for insert with check (auth.uid() = user_id);
+create policy "Users can update their own vessels" on public.vessels for update using (auth.uid() = user_id);
 create policy "Admins can delete vessels" on public.vessels for delete using (
   exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
 );

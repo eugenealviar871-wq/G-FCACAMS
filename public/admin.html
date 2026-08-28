@@ -172,6 +172,25 @@
       #sidebar button:hover { background: var(--sidebar-hover); color: white; }
       #sidebar button.active { background: var(--sidebar-active); color: white; font-weight: 600; box-shadow: 0 4px 12px rgba(0,180,216,0.4); }
       #sidebar button .icon { font-size: 18px; width: 24px; text-align: center; }
+      #sidebar button .menu-label { flex: 1; min-width: 0; }
+      #sidebar button .menu-badge {
+        margin-left: auto;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #ef476f;
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        box-shadow: 0 4px 10px rgba(239, 71, 111, 0.35);
+        flex-shrink: 0;
+      }
+      #sidebar button .menu-badge[hidden] { display: none; }
       
       .collapsible.open .collapsible-content { display: block !important; }
       .collapsible.open .fa-chevron-down { transform: rotate(180deg); }
@@ -211,7 +230,19 @@
       .passwrap .toggle-eye { position: absolute !important; right: 8px !important; top: 50% !important; transform: translateY(-50%) !important; background: transparent !important; color: var(--text-muted) !important; border: none !important; padding: 4px !important; height: 32px !important; width: 32px !important; box-shadow: none !important; margin: 0 !important; min-width: unset !important; z-index: 10 !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 16px !important; border-radius: 8px !important; cursor: pointer !important; }
       .passwrap .toggle-eye:hover { color: var(--text-main) !important; background: rgba(0,0,0,0.05) !important; transform: translateY(-50%) !important; box-shadow: none !important; }
       
-      #confirm_overlay, #history_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+      #confirm_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 3000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+#history_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+#catch_history_overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; z-index: 2500; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+#catch_history_popup {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-width: 1200px;
+  width: calc(100% - 32px);
+  padding: 32px;
+  animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
       #confirm_popup, #history_popup {
         background: var(--surface);
         border: 1px solid var(--border);
@@ -252,21 +283,22 @@
 
     <div id="confirm_overlay"><div id="confirm_popup"></div></div>
     <div id="history_overlay"><div id="history_popup"></div></div>
+    <div id="catch_history_overlay"><div id="catch_history_popup"></div></div>
     <div class="layout" id="admin_app" style="display:none">
       <div id="drawer_overlay" onclick="toggleDrawer(false)"></div>
       <div id="sidebar" role="navigation" aria-label="Admin menu">
         <div class="group">
-          <button data-module="mod_users" onclick="showAdminModule('mod_users')"><i class="fa-solid fa-users icon"></i> Users</button>
-          <button data-module="mod_catches" onclick="showAdminModule('mod_catches')"><i class="fa-solid fa-fish icon"></i> Catches</button>
-          <button data-module="mod_tracks" onclick="showAdminModule('mod_tracks')"><i class="fa-solid fa-route icon"></i> Tracks</button>
-          <button data-module="mod_map" onclick="showAdminModule('mod_map')"><i class="fa-solid fa-map-location-dot icon"></i> Map</button>
-          <button data-module="mod_species" onclick="showAdminModule('mod_species')"><i class="fa-solid fa-fish-fins icon"></i> Species</button>
-          <button data-module="mod_zones" onclick="showAdminModule('mod_zones')"><i class="fa-solid fa-shield-halved icon"></i> Protected Zones</button>
-          <button data-module="mod_alerts" onclick="showAdminModule('mod_alerts')"><i class="fa-solid fa-bell icon"></i> Alerts</button>
-          <button data-module="mod_exports" onclick="showAdminModule('mod_exports')"><i class="fa-solid fa-file-export icon"></i> Exports</button>
-          <button data-module="mod_live" onclick="showAdminModule('mod_live')"><i class="fa-solid fa-satellite-dish icon"></i> Live</button>
-          <button data-module="mod_vessels" onclick="showAdminModule('mod_vessels')"><i class="fa-solid fa-ship icon"></i> Vessels</button>
-          <button data-module="mod_activity" onclick="showAdminModule('mod_activity')"><i class="fa-solid fa-water icon"></i> Activity</button>
+          <button data-module="mod_users" onclick="showAdminModule('mod_users')"><i class="fa-solid fa-users icon"></i><span class="menu-label">Users</span><span class="menu-badge" data-badge-for="mod_users" hidden></span></button>
+          <button data-module="mod_catches" onclick="showAdminModule('mod_catches')"><i class="fa-solid fa-fish icon"></i><span class="menu-label">Catches</span><span class="menu-badge" data-badge-for="mod_catches" hidden></span></button>
+          <button data-module="mod_tracks" onclick="showAdminModule('mod_tracks')"><i class="fa-solid fa-route icon"></i><span class="menu-label">Tracks</span><span class="menu-badge" data-badge-for="mod_tracks" hidden></span></button>
+          <button data-module="mod_map" onclick="showAdminModule('mod_map')"><i class="fa-solid fa-map-location-dot icon"></i><span class="menu-label">Map</span></button>
+          <button data-module="mod_species" onclick="showAdminModule('mod_species')"><i class="fa-solid fa-fish-fins icon"></i><span class="menu-label">Species</span><span class="menu-badge" data-badge-for="mod_species" hidden></span></button>
+          <button data-module="mod_zones" onclick="showAdminModule('mod_zones')"><i class="fa-solid fa-shield-halved icon"></i><span class="menu-label">Protected Zones</span><span class="menu-badge" data-badge-for="mod_zones" hidden></span></button>
+          <button data-module="mod_alerts" onclick="showAdminModule('mod_alerts')"><i class="fa-solid fa-bell icon"></i><span class="menu-label">Active</span><span class="menu-badge" data-badge-for="mod_alerts" hidden></span></button>
+          <button data-module="mod_exports" onclick="showAdminModule('mod_exports')"><i class="fa-solid fa-file-export icon"></i><span class="menu-label">Exports</span><span class="menu-badge" data-badge-for="mod_exports" hidden></span></button>
+          <button data-module="mod_live" onclick="showAdminModule('mod_live')"><i class="fa-solid fa-satellite-dish icon"></i><span class="menu-label">Live</span><span class="menu-badge" data-badge-for="mod_live" hidden></span></button>
+          <button data-module="mod_vessels" onclick="showAdminModule('mod_vessels')"><i class="fa-solid fa-ship icon"></i><span class="menu-label">Vessels</span><span class="menu-badge" data-badge-for="mod_vessels" hidden></span></button>
+          <button data-module="mod_activity" onclick="showAdminModule('mod_activity')"><i class="fa-solid fa-water icon"></i><span class="menu-label">Activity</span><span class="menu-badge" data-badge-for="mod_activity" hidden></span></button>
         </div>
       </div>
       <div id="content">
@@ -313,11 +345,17 @@
         <div class="card" id="mod_tracks" style="display:none">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h2 style="margin:0"><i class="fa-solid fa-route" style="color:var(--primary)"></i> GPS Tracks</h2>
-            <div style="position: relative; width: 320px;">
-              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
-              <input id="trackSearch" placeholder="Search by user name or email..." oninput="filterTracks()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <button id="bulkDeleteTracksBtn" onclick="confirmBulkDeleteTracks()" disabled style="background: #ff3b30; width: auto; padding: 8px 16px; height: auto; font-size: 13px;">
+                <i class="fa-solid fa-trash-can"></i> Delete Selected (<span id="selectedTrackCount">0</span>)
+              </button>
+              <div style="position: relative; width: 320px;">
+                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px;"></i>
+                <input id="trackSearch" placeholder="Search by user name or email..." oninput="filterTracks()" style="padding: 8px 12px 8px 36px; margin: 0; width: 100%; height: 38px; font-size: 13px; border-radius: 20px; background: var(--background);" />
+              </div>
             </div>
           </div>
+          <div id="bulkDeleteMsg" class="small" style="color: #ff9500; margin-bottom: 12px; display: none;"></div>
           <table id="tracks"></table>
         </div>
 
@@ -386,7 +424,7 @@
         </div>
 
         <div class="card" id="mod_alerts" style="display:none">
-          <h2><i class="fa-solid fa-bell" style="color:var(--primary)"></i> Alerts</h2>
+          <h2><i class="fa-solid fa-bell" style="color:var(--primary)"></i> Active</h2>
           <table id="alerts"></table>
         </div>
 
@@ -441,27 +479,126 @@
     </div>
 
     <script>
-      const state = { token: localStorage.getItem('fish_token'), user: JSON.parse(localStorage.getItem('fish_user') || 'null'), species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, mapPollTimer: null, liveEvents: [], statusByUserId: new Map() }
+      const ADMIN_BADGE_STORAGE_KEY = 'admin_sidebar_reads_v1'
+      const state = { token: localStorage.getItem('fish_token'), user: JSON.parse(localStorage.getItem('fish_user') || 'null'), species: [], currentModule: null, refreshTimer: null, alerts: [], _alarm: null, _alarmOn: false, mapPollTimer: null, liveEvents: [], statusByUserId: new Map(), selectedUsers: new Set(), readState: loadAdminReadState(), unreadCounts: {}, tracksSummary: [], trackHistory: [], historyMap: null, historyRoute: null, currentHistoryUserId: null, currentHistoryFilter: 'all', historySelectedTracks: new Set(), catchesSummary: [], catchHistory: [], catchHistoryMap: null, currentCatchHistoryUserId: null, currentCatchHistoryFilter: 'all', historySelectedCatches: new Set() }
+
+      function loadAdminReadState() {
+        try {
+          const raw = localStorage.getItem(ADMIN_BADGE_STORAGE_KEY)
+          const parsed = raw ? JSON.parse(raw) : {}
+          return parsed && typeof parsed === 'object' ? parsed : {}
+        } catch {
+          return {}
+        }
+      }
+      function saveAdminReadState() {
+        try { localStorage.setItem(ADMIN_BADGE_STORAGE_KEY, JSON.stringify(state.readState || {})) } catch {}
+      }
+      function getReadSet(moduleId) {
+        const list = state.readState && Array.isArray(state.readState[moduleId]) ? state.readState[moduleId] : []
+        return new Set(list.map(x => String(x)))
+      }
+      function setReadSet(moduleId, values) {
+        if (!state.readState) state.readState = {}
+        state.readState[moduleId] = Array.from(new Set((Array.isArray(values) ? values : []).map(x => String(x))))
+        saveAdminReadState()
+      }
+      function getSpeciesMarkers() {
+        return (Array.isArray(state.species) ? state.species : []).map(s => String(s))
+      }
+      function getZoneMarkers() {
+        return (Array.isArray(state.zones) ? state.zones : []).map(z => `${z.id}:${z.updated_at || z.updatedAt || z.created_at || z.createdAt || z.name || ''}`)
+      }
+      function getVesselMarkers() {
+        return (Array.isArray(state.vessels) ? state.vessels : []).map(v => `${v.id}:${v.updated_at || v.updatedAt || v.created_at || v.createdAt || ''}`)
+      }
+      function getActiveMarkers() {
+        return (Array.isArray(state.alerts) ? state.alerts : []).filter(a => a && a.type === 'Status: Active').map(a => String(a.id))
+      }
+      function getLiveEventMarkers() {
+        return (Array.isArray(state.liveEvents) ? state.liveEvents : []).map(e => String(e.id))
+      }
+      function getModuleMarkers(moduleId) {
+        switch (moduleId) {
+          case 'mod_users': return (Array.isArray(state.users) ? state.users : []).map(u => String(u.id))
+          case 'mod_catches': return (Array.isArray(state.catchesSummary) ? state.catchesSummary : []).map(c => String(c.userId))
+          case 'mod_tracks': return (Array.isArray(state.tracksSummary) ? state.tracksSummary : []).map(t => String(t.userId))
+          case 'mod_species': return getSpeciesMarkers()
+          case 'mod_zones': return getZoneMarkers()
+          case 'mod_alerts': return getActiveMarkers()
+          case 'mod_exports': return []
+          case 'mod_live': return getLiveEventMarkers()
+          case 'mod_vessels': return getVesselMarkers()
+          case 'mod_activity': return (Array.isArray(state.activityLogs) ? state.activityLogs : []).map(a => String(a.id))
+          default: return []
+        }
+      }
+      function formatBadgeCount(count) {
+        return count > 99 ? '99+' : String(count)
+      }
+      function refreshSidebarBadges() {
+        const modules = ['mod_users','mod_catches','mod_tracks','mod_species','mod_zones','mod_alerts','mod_exports','mod_live','mod_vessels','mod_activity']
+        state.unreadCounts = {}
+        modules.forEach(moduleId => {
+          const badge = document.querySelector(`[data-badge-for="${moduleId}"]`)
+          if (!badge) return
+          const markers = getModuleMarkers(moduleId)
+          const seen = getReadSet(moduleId)
+          const unread = markers.filter(marker => !seen.has(String(marker))).length
+          state.unreadCounts[moduleId] = unread
+          if (unread > 0) {
+            badge.hidden = false
+            badge.textContent = formatBadgeCount(unread)
+          } else {
+            badge.hidden = true
+            badge.textContent = ''
+          }
+        })
+      }
+      function markModuleRead(moduleId) {
+        if (!moduleId) return
+        const markers = getModuleMarkers(moduleId)
+        setReadSet(moduleId, markers)
+        refreshSidebarBadges()
+      }
+      function registerLiveEvent(kind, payload) {
+        if (!state.liveEvents) state.liveEvents = []
+        const baseId = payload && (payload.id || payload.userId || payload.recordedAt || payload.at || Date.now())
+        const eventId = `${kind}:${baseId}`
+        if (state.liveEvents.some(e => e.id === eventId)) return
+        state.liveEvents.unshift({ id: eventId, kind, payload, createdAt: new Date().toISOString() })
+        if (state.liveEvents.length > 200) state.liveEvents = state.liveEvents.slice(0, 200)
+        if (state.currentModule === 'mod_live') markModuleRead('mod_live')
+        else refreshSidebarBadges()
+      }
       
       // Redirect if not logged in or not admin
       if (!state.token || (state.user && state.user.role !== 'admin')) {
         location.href = '/login.html';
       } else {
         const initAdmin = () => {
-          document.body.classList.remove('auth-bg')
-          document.getElementById('admin_app').style.display = ''
-          document.getElementById('logout_btn').style.display = ''
-          
-          // Update Navbar User Info
-          if (state.user) {
-            document.getElementById('user_profile').style.display = 'block';
-            document.getElementById('user_name').textContent = state.user.name || state.user.email;
-            document.getElementById('user_role').textContent = state.user.role || 'Admin';
-          }
+          try {
+            document.body.classList.remove('auth-bg')
+            document.getElementById('admin_app').style.display = ''
+            document.getElementById('logout_btn').style.display = ''
+            
+            // Update Navbar User Info
+            if (state.user) {
+              document.getElementById('user_profile').style.display = 'block';
+              document.getElementById('user_name').textContent = state.user.name || state.user.email;
+              document.getElementById('user_role').textContent = state.user.role || 'Admin';
+            }
 
-          showAdminModule('mod_users')
-          loadData()
-          setupAutoRefreshAdmin()
+            showAdminModule('mod_users')
+            try { loadData() } catch {}
+            setupAutoRefreshAdmin()
+          } catch (e) {
+            if (!window._authInvalidated) {
+              const msg = (e && e.message) ? String(e.message) : ''
+              const isAuth = msg.indexOf('Invalid token') !== -1 || msg.indexOf('Token') !== -1
+              if (!isAuth) console.error('Admin init error:', e)
+            }
+          }
         };
         if (document.readyState === 'loading') {
           window.addEventListener('DOMContentLoaded', initAdmin);
@@ -488,9 +625,14 @@
       }
       function logoutAdmin(){
         state.token = null
+        state.user = null
+        try { localStorage.removeItem('fish_token'); localStorage.removeItem('fish_user') } catch {}
         if (state.refreshTimer) { clearInterval(state.refreshTimer); state.refreshTimer = null }
         stopUserMapPolling()
         try { if (window._liveES) { window._liveES.close(); window._liveES = null } } catch {}
+        window._liveRetryTimer = null
+        window._liveRetryAttempts = 0
+        window._authInvalidated = true
         const logoutBtn = document.getElementById('logout_btn')
         if (logoutBtn) logoutBtn.style.display = 'none'
         const adminApp = document.getElementById('admin_app')
@@ -498,7 +640,13 @@
         const loginCard = document.getElementById('login_card')
         if (loginCard) loginCard.style.display = ''
         document.body.classList.add('auth-bg')
-        location.href = '/admin'
+        location.href = '/login.html'
+      }
+      let _redirectingToLogin = false
+      function handleAuthFailure() {
+        if (_redirectingToLogin) return
+        _redirectingToLogin = true
+        logoutAdmin()
       }
       async function installAdmin(){
         try {
@@ -517,6 +665,8 @@
         ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
         const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
         state.currentModule = id
+        markModuleRead(id)
+        if (id !== 'mod_catches') closeCatchHistory()
         if (id === 'mod_map') { setTimeout(initUserMap, 50); startUserMapPolling() } else { stopUserMapPolling() }
         if (id === 'mod_zones') { setTimeout(initZoneMap, 50) }
         if (id === 'mod_vessels') { loadVesselsAdmin() }
@@ -535,7 +685,7 @@
         state.mapPollTimer = null
       }
       function refreshDataAdmin(){
-        if (!state.token) return
+        if (!state.token || window._authInvalidated) return
         // Don't auto-refresh if the user is currently editing a catch
         if (document.querySelector('tr[data-id] select')) return
         try { loadData() } catch {}
@@ -554,18 +704,51 @@
       }
       window.addEventListener('keydown', function(e){ if (e.key === 'Escape') toggleDrawer(false) })
       async function loadData() {
+        if (window._authInvalidated) return
         const headers = { 'Authorization': 'Bearer ' + state.token }
-        const ur = await fetch('/api/admin/users', { headers }); const users = await ur.json(); state.users = users
-        const cr = await fetch('/api/catches', { headers }); state.catches = await cr.json()
-        const ir = await fetch('/api/images', { headers }); const images = await ir.json(); state.images = images
+        const ur = await fetch('/api/admin/users', { headers })
+        if (ur.status === 401) { handleAuthFailure(); return }
+        let users = await ur.json()
+        let lr
+        try { lr = await fetch('/api/admin/live_locations', { headers }); if (lr.status === 401) { handleAuthFailure(); return } } catch {}
+        let latestAct = new Map()
+        if (lr && lr.ok) {
+          const ld = await lr.json()
+          ;(Array.isArray(ld) ? ld : []).forEach(p => {
+            const at = p.lastSeenAt || p.recordedAt
+            if (at) latestAct.set(p.userId, { at: new Date(at), active: p.active !== false })
+          })
+        }
+        users = (Array.isArray(users) ? users : []).sort((a, b) => {
+          const aAct = latestAct.get(a.id)
+          const bAct = latestAct.get(b.id)
+          const aActive = aAct && aAct.active ? 0 : 1
+          const bActive = bAct && bAct.active ? 0 : 1
+          if (aActive !== bActive) return aActive - bActive
+          const aAt = aAct ? aAct.at.getTime() : new Date(a.createdAt || 0).getTime()
+          const bAt = bAct ? bAct.at.getTime() : new Date(b.createdAt || 0).getTime()
+          return bAt - aAt
+        })
+        state.users = users
+        state.latestUserActivity = latestAct
+        const cr = await fetch('/api/catches', { headers }); let catchesRaw = await cr.json()
+        state.catches = (Array.isArray(catchesRaw) ? catchesRaw : []).sort((a, b) => new Date(b.capturedAt || b.createdAt || 0) - new Date(a.capturedAt || a.createdAt || 0))
+        const csummary = await fetch('/api/admin/catches/summary', { headers }); const csRaw = await csummary.json(); state.catchesSummary = Array.isArray(csRaw) ? csRaw : []
+        const ir = await fetch('/api/images', { headers }); const imagesRaw = await ir.json(); const images = Array.isArray(imagesRaw) ? imagesRaw : []; state.images = images
         const imgsByCatch = {}
         images.forEach(i => { const k = i.catch_id; if (!imgsByCatch[k]) imgsByCatch[k] = []; imgsByCatch[k].push(i) })
         state.imgsByCatch = imgsByCatch
-        const tr = await fetch('/api/admin/tracks', { headers }); state.tracks = await tr.json()
-        const sr = await fetch('/api/admin/species', { headers }); const species = await sr.json(); state.species = species
-        const zr = await fetch('/api/admin/protected_areas', { headers }); const zones = await zr.json(); state.zones = zones
-        const ar = await fetch('/api/admin/alerts', { headers }); const alerts = await ar.json(); state.alerts = alerts
-        const vr = await fetch('/api/vessels', { headers }); state.vessels = await vr.json()
+        const tr = await fetch('/api/admin/tracks/summary', { headers })
+        const trRaw = await tr.json(); state.tracksSummary = Array.isArray(trRaw) ? trRaw : []
+        const hr = await fetch('/api/admin/tracks', { headers })
+        let tracks = await hr.json()
+        tracks = (Array.isArray(tracks) ? tracks : []).sort((a, b) => new Date(b.recordedAt || 0) - new Date(a.recordedAt || 0))
+        state.tracks = tracks
+        const sr = await fetch('/api/admin/species', { headers }); const speciesRaw = await sr.json(); const species = Array.isArray(speciesRaw) ? speciesRaw : []; state.species = species
+        const zr = await fetch('/api/admin/protected_areas', { headers }); const zonesRaw = await zr.json(); state.zones = Array.isArray(zonesRaw) ? zonesRaw : []
+        const ar = await fetch('/api/admin/alerts', { headers }); const alertsRaw = await ar.json(); const alerts = Array.isArray(alertsRaw) ? alertsRaw : []; state.alerts = alerts
+        const vr = await fetch('/api/vessels', { headers }); const vesselsRaw = await vr.json(); state.vessels = (Array.isArray(vesselsRaw) ? vesselsRaw : []).sort((a, b) => new Date(b.createdAt || b.recordedAt || 0) - new Date(a.createdAt || a.recordedAt || 0))
+        const agr = await fetch('/api/activity_logs', { headers }); const actLogsRaw = await agr.json(); state.activityLogs = (Array.isArray(actLogsRaw) ? actLogsRaw : []).sort((a, b) => new Date(b.createdAt || b.recordedAt || 0) - new Date(a.createdAt || a.recordedAt || 0))
         
         filterUsers()
         filterCatches()
@@ -579,7 +762,7 @@
         
         const at = document.getElementById('alerts'); at.innerHTML = '<tr><th>Type</th><th>Status</th><th>User</th><th>Coords</th><th>Time</th><th>Action</th></tr>'
         alerts.forEach(a => {
-          const u = (state.users||[]).find(x => x.id === a.userId)
+          const u = (Array.isArray(state.users) ? state.users : []).find(x => x.id === a.userId)
           const uname = u ? u.name : a.userId
           const actions = (a.status==='resolved' ? '' : (a.status==='acknowledged' ? `<button onclick="resolveAlert('${a.id}')">Resolve</button>` : `<button onclick="acknowledgeAlert('${a.id}')">Acknowledge</button> <button onclick="resolveAlert('${a.id}')">Resolve</button>`)) + ` <button onclick="confirmDeleteAlert('${a.id}')">Delete</button>`
           
@@ -589,28 +772,33 @@
           else if (a.type === 'Status: In Transit') typeStyle = 'background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600'
           
           const typeDisplay = typeStyle ? `<span style="${typeStyle}">${a.type}</span>` : a.type
-          
-          at.innerHTML += `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</td><td>${new Date(a.recordedAt).toLocaleString()}</td><td>${actions}</td></tr>`
+          const latVal = typeof a.lat === 'number' ? a.lat : 0
+          const lngVal = typeof a.lng === 'number' ? a.lng : 0
+          at.innerHTML += `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${latVal.toFixed(5)}, ${lngVal.toFixed(5)}</td><td>${new Date(a.recordedAt||0).toLocaleString()}</td><td>${actions}</td></tr>`
         })
         loadActivity()
-          ensureLive()
-        }
+        if (state.currentModule) markModuleRead(state.currentModule)
+        refreshSidebarBadges()
+        ensureLive()
+      }
 
       let adminVesselsData = []
 
       async function loadVesselsAdmin() {
         try {
           const r = await fetch('/api/vessels', { headers: { 'Authorization': 'Bearer ' + state.token } })
+          if (r.status === 401) { handleAuthFailure(); return }
           const d = await r.json()
-          if (!r.ok) throw new Error(d.error)
-          adminVesselsData = d
+          if (!r.ok) return
+          adminVesselsData = Array.isArray(d) ? d.sort((a,b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0)) : []
           renderVesselsAdmin()
-        } catch (e) { console.error(e) }
+        } catch (e) {}
       }
 
-      function renderVesselsAdmin(vessels = adminVesselsData) {
+      function renderVesselsAdmin(vessels) {
+        const arr = Array.isArray(vessels) ? vessels : (Array.isArray(adminVesselsData) ? adminVesselsData : [])
         const table = document.getElementById('vesselsTable')
-        if (!vessels.length) {
+        if (!arr.length) {
           table.innerHTML = '<tr><td style="text-align:center; padding:20px; color:var(--text-muted)">No vessels registered yet</td></tr>'
           return
         }
@@ -623,14 +811,14 @@
             <th>Created</th>
             <th>Updated</th>
           </tr>
-          ${vessels.map(v => `
+          ${arr.map(v => `
             <tr>
               <td>${v.vessel_registration_number}</td>
               <td>${v.vessel_name}</td>
               <td>${v.owner_name}</td>
               <td>${v.barangay || ''}</td>
-              <td>${new Date(v.created_at || v.createdAt).toLocaleString()}</td>
-              <td>${new Date(v.updated_at || v.updatedAt).toLocaleString()}</td>
+              <td>${new Date(v.created_at || v.createdAt || 0).toLocaleString()}</td>
+              <td>${new Date(v.updated_at || v.updatedAt || 0).toLocaleString()}</td>
             </tr>
           `).join('')}
         `
@@ -642,11 +830,12 @@
           renderVesselsAdmin()
           return
         }
-        const filtered = adminVesselsData.filter(v => 
-          v.vessel_registration_number.toLowerCase().includes(q) ||
-          v.vessel_name.toLowerCase().includes(q) ||
-          v.owner_name.toLowerCase().includes(q) ||
-          (v.barangay && v.barangay.toLowerCase().includes(q))
+        const src = Array.isArray(adminVesselsData) ? adminVesselsData : []
+        const filtered = src.filter(v => 
+          (v.vessel_registration_number || '').toLowerCase().includes(q) ||
+          (v.vessel_name || '').toLowerCase().includes(q) ||
+          (v.owner_name || '').toLowerCase().includes(q) ||
+          (v.barangay || '').toLowerCase().includes(q)
         )
         renderVesselsAdmin(filtered)
       }
@@ -682,13 +871,27 @@
       function renderUsers(users) {
         const ut = document.getElementById('users')
         if (!ut) return
-        ut.innerHTML = '<tr><th>User Name</th><th>Email</th><th>Role</th><th>Created</th><th>Action</th></tr>'
-        if (!users || users.length === 0) {
-          ut.innerHTML += '<tr><td colspan="5" style="text-align:center; padding: 24px; color: var(--text-muted);">No users found.</td></tr>'
+        const arr = Array.isArray(users) ? users : []
+        ut.innerHTML = '<tr><th>User Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Active</th><th>Created</th><th>Action</th></tr>'
+        if (arr.length === 0) {
+          ut.innerHTML += '<tr><td colspan="7" style="text-align:center; padding: 24px; color: var(--text-muted);">No users found.</td></tr>'
           return
         }
-        users.forEach(u => {
-          ut.innerHTML += `<tr><td>${u.name || ''}</td><td>${u.email}</td><td><select onchange="changeRole('${u.id}', this.value)"><option ${u.role==='admin'?'selected':''}>admin</option><option ${u.role==='inspector'?'selected':''}>inspector</option><option ${u.role==='fisher'?'selected':''}>fisher</option><option ${u.role==='researcher'?'selected':''}>researcher</option></select></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${u.role==='admin'?'<span class="small">protected</span>':`<button onclick="deleteUser('${u.id}')">Delete</button>`}</td></tr>`
+        arr.forEach(u => {
+          const act = state.latestUserActivity ? state.latestUserActivity.get(u.id) : null
+          let statusBadge = ''
+          let lastActiveText = '—'
+          if (act) {
+            if (act.active) {
+              statusBadge = '<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600"><i class="fa-solid fa-circle" style="font-size:8px; margin-right:4px"></i>Online</span>'
+            } else {
+              statusBadge = '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600"><i class="fa-solid fa-circle" style="font-size:8px; margin-right:4px"></i>Offline</span>'
+            }
+            lastActiveText = new Date(act.at).toLocaleString()
+          } else {
+            statusBadge = '<span style="background:#f3f4f6; color:#4b5563; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600">Inactive</span>'
+          }
+          ut.innerHTML += `<tr><td>${u.name || ''}</td><td>${u.email || ''}</td><td><select onchange="changeRole('${u.id}', this.value)"><option ${u.role==='admin'?'selected':''}>admin</option><option ${u.role==='inspector'?'selected':''}>inspector</option><option ${u.role==='fisher'?'selected':''}>fisher</option><option ${u.role==='researcher'?'selected':''}>researcher</option></select></td><td>${statusBadge}</td><td class="small">${lastActiveText}</td><td class="small">${new Date(u.createdAt || 0).toLocaleString()}</td><td>${u.role==='admin'?'<span class="small">protected</span>':`<button onclick="deleteUser('${u.id}')">Delete</button>`}</td></tr>`
         })
       }
 
@@ -698,7 +901,7 @@
           renderUsers(state.users)
           return
         }
-        const filtered = (state.users || []).filter(u => 
+        const filtered = (Array.isArray(state.users) ? state.users : []).filter(u =>
           (u.name || '').toLowerCase().includes(q) || 
           (u.email || '').toLowerCase().includes(q) || 
           (u.role || '').toLowerCase().includes(q)
@@ -706,66 +909,151 @@
         renderUsers(filtered)
       }
 
-      function renderCatches(catches) {
+      function renderCatchesSummary(summary) {
         const ct = document.getElementById('catches')
         if (!ct) return
-        ct.innerHTML = '<tr><th>Owner Name</th><th>Barangay</th><th>Photo</th><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
-        if (!catches || catches.length === 0) {
-          ct.innerHTML += '<tr><td colspan="11" style="text-align:center; padding: 24px; color: var(--text-muted);">No catches found.</td></tr>'
+        const arr = Array.isArray(summary) ? summary : []
+        ct.innerHTML = '<tr><th>Owner Name</th><th>Barangay</th><th>Latest Catch</th><th>Total Catches</th><th>Last Captured</th><th>Action</th></tr>'
+        if (arr.length === 0) {
+          ct.innerHTML += '<tr><td colspan="6" style="text-align:center; padding: 24px; color: var(--text-muted);">No catches found.</td></tr>'
           return
         }
-        const imgsByCatch = state.imgsByCatch || {}
-        catches.forEach(c => {
-          const img = (imgsByCatch[c.id] && imgsByCatch[c.id][0]) ? imgsByCatch[c.id][0] : null
-          const thumb = img ? `<a target="_blank" href="${img.bucket_key}"><img src="${img.bucket_key}" style="height:40px;border-radius:4px"/></a>` : ''
-          const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
-          ct.innerHTML += `<tr data-id="${c.id}"><td>${c.ownerName || ''}</td><td>${c.barangay || ''}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="ng">${netGear}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+        arr.forEach(s => {
+          const userName = s.userName || s.userId || 'Unknown'
+          const userEmail = s.userEmail || ''
+          ct.innerHTML += `<tr><td><a href="#" onclick="openCatchHistory('${s.userId}'); return false;" style="font-weight:600; color:var(--primary)">${userName}</a><div class="small">${userEmail}</div></td><td>${s.barangay || '—'}</td><td>${s.latestSpecies || '—'}</td><td>${s.totalCatches} catches</td><td>${s.latestCapturedAt ? new Date(s.latestCapturedAt).toLocaleString() : '—'}</td><td><button onclick="openCatchHistory('${s.userId}')">View History</button></td></tr>`
         })
       }
 
       function filterCatches() {
         const q = document.getElementById('catchSearch').value.toLowerCase().trim()
         if (!q) {
-          renderCatches(state.catches)
+          renderCatchesSummary(state.catchesSummary)
           return
         }
-        const filtered = (state.catches || []).filter(c => 
-          (c.species || '').toLowerCase().includes(q) || 
-          (c.ownerName || '').toLowerCase().includes(q) || 
-          (c.barangay || '').toLowerCase().includes(q) || 
-          (c.vesselName || c.vessel || '').toLowerCase().includes(q) ||
-          (c.netType || '').toLowerCase().includes(q) ||
-          (c.gear || '').toLowerCase().includes(q) ||
-          (c.note || '').toLowerCase().includes(q)
+        const filtered = (Array.isArray(state.catchesSummary) ? state.catchesSummary : []).filter(s =>
+          (s.userName || '').toLowerCase().includes(q) || 
+          (s.userEmail || '').toLowerCase().includes(q) ||
+          (s.userId || '').toLowerCase().includes(q) ||
+          (s.barangay || '').toLowerCase().includes(q) ||
+          (s.latestSpecies || '').toLowerCase().includes(q)
         )
-        renderCatches(filtered)
+        renderCatchesSummary(filtered)
       }
 
-      function renderTracks(tracks) {
+      function renderTracksSummary(summary) {
         const tt = document.getElementById('tracks')
         if (!tt) return
-        tt.innerHTML = '<tr><th>User</th><th>Coords</th><th>Recorded</th><th>Action</th></tr>'
-        if (!tracks || tracks.length === 0) {
-          tt.innerHTML += '<tr><td colspan="4" style="text-align:center; padding: 24px; color: var(--text-muted);">No tracks found.</td></tr>'
+        const arr = Array.isArray(summary) ? summary : []
+        tt.innerHTML = '<tr><th style="width:36px; text-align:center"><input type="checkbox" id="selectAllTracks" onchange="toggleSelectAllUsers(this.checked)" /></th><th>User</th><th>Latest Coordinates</th><th>Last Recorded</th><th>Total Tracks</th><th>Action</th></tr>'
+        if (arr.length === 0) {
+          tt.innerHTML += '<tr><td colspan="6" style="text-align:center; padding: 24px; color: var(--text-muted);">No tracks found.</td></tr>'
+          updateSelectedUserUi()
           return
         }
-        tracks.forEach(t => {
-          tt.innerHTML += `<tr><td>${t.user ? t.user.name : t.userId}</td><td><a target="_blank" href="https://maps.google.com/?q=${t.lat},${t.lng}">${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}</a></td><td>${new Date(t.recordedAt).toLocaleString()}</td><td><button onclick="confirmDeleteTrack('${t.id}')">Delete</button></td></tr>`
+        arr.forEach(s => {
+          const checked = state.selectedUsers.has(s.userId) ? 'checked' : ''
+          const userName = s.userName || s.userId || 'Unknown'
+          const userEmail = s.userEmail || ''
+          tt.innerHTML += `<tr><td style="text-align:center"><input type="checkbox" class="user-checkbox" data-user-id="${s.userId}" onchange="toggleSingleUser('${s.userId}', this.checked)" ${checked} /></td><td><a href="#" onclick="openUserTrackHistory('${s.userId}'); return false;" style="font-weight:600; color:var(--primary)">${userName}</a><div class="small">${userEmail}</div></td><td>${s.latestLat != null && s.latestLng != null ? Number(s.latestLat).toFixed(5)+', '+Number(s.latestLng).toFixed(5) : '—'}</td><td>${s.latestRecordedAt ? new Date(s.latestRecordedAt).toLocaleString() : '—'}</td><td>${s.totalTracks} tracks</td><td><button onclick="openUserTrackHistory('${s.userId}')">View History</button></td></tr>`
         })
+        const allChecked = arr.length > 0 && arr.every(s => state.selectedUsers.has(s.userId))
+        const selectAll = document.getElementById('selectAllTracks')
+        if (selectAll) selectAll.checked = allChecked
+        updateSelectedUserUi()
+      }
+
+      function toggleSelectAllUsers(checked) {
+        const q = document.getElementById('trackSearch').value.toLowerCase().trim()
+        let visibleSummary
+        if (!q) {
+          visibleSummary = Array.isArray(state.tracksSummary) ? state.tracksSummary : []
+        } else {
+          visibleSummary = (Array.isArray(state.tracksSummary) ? state.tracksSummary : []).filter(s =>
+            (s.userName || '').toLowerCase().includes(q) || 
+            (s.userEmail || '').toLowerCase().includes(q) ||
+            (s.userId || '').toLowerCase().includes(q)
+          )
+        }
+        if (checked) {
+          visibleSummary.forEach(s => state.selectedUsers.add(s.userId))
+        } else {
+          visibleSummary.forEach(s => state.selectedUsers.delete(s.userId))
+        }
+        document.querySelectorAll('.user-checkbox').forEach(cb => {
+          const uid = cb.getAttribute('data-user-id')
+          cb.checked = state.selectedUsers.has(uid)
+        })
+        updateSelectedUserUi()
+      }
+
+      function toggleSingleUser(userId, checked) {
+        if (checked) state.selectedUsers.add(userId)
+        else state.selectedUsers.delete(userId)
+        const q = document.getElementById('trackSearch').value.toLowerCase().trim()
+        let visibleSummary
+        if (!q) visibleSummary = Array.isArray(state.tracksSummary) ? state.tracksSummary : []
+        else visibleSummary = (Array.isArray(state.tracksSummary) ? state.tracksSummary : []).filter(s =>
+          (s.userName || '').toLowerCase().includes(q) || 
+          (s.userEmail || '').toLowerCase().includes(q) ||
+          (s.userId || '').toLowerCase().includes(q)
+        )
+        const allChecked = visibleSummary.length > 0 && visibleSummary.every(s => state.selectedUsers.has(s.userId))
+        const selectAll = document.getElementById('selectAllTracks')
+        if (selectAll) selectAll.checked = allChecked
+        updateSelectedUserUi()
+      }
+
+      function updateSelectedUserUi() {
+        const count = state.selectedUsers.size
+        const countEl = document.getElementById('selectedTrackCount')
+        const btnEl = document.getElementById('bulkDeleteTracksBtn')
+        const msgEl = document.getElementById('bulkDeleteMsg')
+        if (countEl) countEl.textContent = count
+        if (btnEl) {
+          btnEl.disabled = count === 0
+          btnEl.style.opacity = count === 0 ? '0.5' : '1'
+          btnEl.style.cursor = count === 0 ? 'not-allowed' : 'pointer'
+        }
+        if (msgEl) {
+          if (count === 0) { msgEl.textContent = 'Please select at least one user to delete their GPS history.'; msgEl.style.display = '' }
+          else { msgEl.style.display = 'none' }
+        }
+      }
+
+      function confirmBulkDeleteTracks() {
+        const count = state.selectedUsers.size
+        if (count === 0) return
+        const names = (state.tracksSummary || [])
+          .filter(s => state.selectedUsers.has(s.userId))
+          .map(s => s.userName || s.userId)
+          .join(', ')
+        openConfirm(`Are you sure you want to delete all GPS tracking history for:\n${names}?`, function(){ bulkDeleteUserTracks() })
+      }
+
+      async function bulkDeleteUserTracks() {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        const userIds = Array.from(state.selectedUsers)
+        const deletePromises = userIds.map(uid => 
+          fetch('/api/admin/tracks/user/' + encodeURIComponent(uid), { method:'DELETE', headers })
+        )
+        await Promise.all(deletePromises)
+        state.selectedUsers.clear()
+        loadData()
       }
 
       function filterTracks() {
         const q = document.getElementById('trackSearch').value.toLowerCase().trim()
         if (!q) {
-          renderTracks(state.tracks)
+          renderTracksSummary(state.tracksSummary)
           return
         }
-        const filtered = (state.tracks || []).filter(t => 
-          (t.user ? t.user.name : '').toLowerCase().includes(q) || 
-          (t.user ? t.user.email : '').toLowerCase().includes(q) ||
-          (t.userId || '').toLowerCase().includes(q)
+        const filtered = (Array.isArray(state.tracksSummary) ? state.tracksSummary : []).filter(s =>
+          (s.userName || '').toLowerCase().includes(q) || 
+          (s.userEmail || '').toLowerCase().includes(q) ||
+          (s.userId || '').toLowerCase().includes(q)
         )
-        renderTracks(filtered)
+        renderTracksSummary(filtered)
       }
 
       function startEditCatch(id, species, note, weight, length, gear, vessel) {
@@ -789,7 +1077,7 @@
         ln.innerHTML = `<input id="${lnId}" type="number" step="0.1" value="${length||''}" style="width:60px"/>`
         vs.innerHTML = `<input id="${vsId}" value="${vessel||''}" style="width:100%"/>`
         
-        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${vsId}')">Save</button> <button onclick="loadData()">Cancel</button>`
+        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${vsId}')">Save</button> <button onclick="if (state.currentCatchHistoryUserId) { loadCatchHistory() } else { loadData() }">Cancel</button>`
       }
       async function saveCatch(id, selId, noteId, wtId, lnId, vsId) {
         const species = document.getElementById(selId).value
@@ -803,13 +1091,21 @@
           headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, 
           body: JSON.stringify({ species, note, weightKg, lengthCm, vessel }) 
         })
-        loadData()
+        if (state.currentCatchHistoryUserId) {
+          loadCatchHistory()
+        } else {
+          loadData()
+        }
       }
       async function deleteCatch(id) { 
         if (!confirm('Delete this catch?')) return
         await fetch('/api/admin/catches/'+id, { method:'DELETE', headers:{ 'Authorization':'Bearer '+state.token } }); 
-        document.getElementById('catchSearch').value = ''
-        loadData() 
+        if (state.currentCatchHistoryUserId) {
+          loadCatchHistory()
+        } else {
+          document.getElementById('catchSearch').value = ''
+          loadData()
+        }
       }
       async function addZone() {
         try {
@@ -903,17 +1199,22 @@
         const to = document.getElementById('actTo').value
         const headers = { 'Authorization': 'Bearer ' + state.token }
         const url = `/api/activity_logs?${t?('type='+encodeURIComponent(t)+'&'):''}${from?('from='+encodeURIComponent(from)+'&'):''}${to?('to='+encodeURIComponent(to)):''}`
-        const r = await fetch(url, { headers }); const logs = await r.json()
+        const r = await fetch(url, { headers }); const logsRaw = await r.json(); const logs = Array.isArray(logsRaw) ? logsRaw : []
         const tbl = document.getElementById('activityLogs'); tbl.innerHTML = '<tr><th>Category</th><th>Activity</th><th>User</th><th>Location</th><th>Time</th><th>Photo</th><th>Action</th></tr>'
-        logs.forEach(a => {
-          const cat = a.category || TYPE_TO_CAT[a.type] || ''
-          const label = TYPE_LABEL[a.type] || a.type
-          const u = (state.users||[]).find(x => x.id === a.user_id)
-          const uname = u ? u.name : a.user_id
-          const thumb = a.photoUrl ? `<a target="_blank" href="${a.photoUrl}"><img src="${a.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
-          tbl.innerHTML += `<tr><td>${cat}</td><td>${label}</td><td>${uname}</td><td><a target="_blank" href="https://maps.google.com/?q=${a.location.lat},${a.location.lng}">${a.location.lat.toFixed(5)}, ${a.location.lng.toFixed(5)}</a></td><td>${new Date(a.created_at).toLocaleString()}</td><td>${thumb}</td><td><button onclick="deleteActivity('${a.id}')">Delete</button></td></tr>`
-        })
-      }
+         logs.forEach(a => {
+           const cat = a.category || TYPE_TO_CAT[a.type] || ''
+           const label = TYPE_LABEL[a.type] || a.type
+           const u = (Array.isArray(state.users) ? state.users : []).find(x => x.id === a.user_id)
+           const uname = u ? u.name : a.user_id
+           const thumb = a.photoUrl ? `<a target="_blank" href="${a.photoUrl}"><img src="${a.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
+           const lat = a.location && typeof a.location.lat === 'number' ? a.location.lat : 0
+           const lng = a.location && typeof a.location.lng === 'number' ? a.location.lng : 0
+           const hasLoc = a.location && typeof a.location.lat === 'number' && typeof a.location.lng === 'number'
+           const locLink = hasLoc ? `<a target="_blank" href="https://maps.google.com/?q=${lat},${lng}">${lat.toFixed(5)}, ${lng.toFixed(5)}</a>` : '—'
+           tbl.innerHTML += `<tr><td>${cat}</td><td>${label}</td><td>${uname}</td><td>${locLink}</td><td>${new Date(a.created_at || 0).toLocaleString()}</td><td>${thumb}</td><td><button onclick="deleteActivity('${a.id}')">Delete</button></td></tr>`
+         })
+         markModuleRead('mod_activity')
+       }
 
       async function deleteActivity(id) {
         const headers = { 'Authorization': 'Bearer ' + state.token }
@@ -1087,7 +1388,7 @@
           if (!r.ok) throw new Error(d.error || 'Failed to load locations')
           const seenUserIds = new Set()
           const activeUserIds = new Set()
-          ;(d || []).forEach(p => {
+          ;(Array.isArray(d) ? d : []).forEach(p => {
             const np = normalizeTrackPoint(p)
             if (!np) return
             np.user = p.user || null
@@ -1416,40 +1717,81 @@
       }
 
       function ensureLive(force) {
+        if (window._authInvalidated) return
         if (window._liveES && !force) {
            if (window._liveES.readyState !== 2) return 
            window._liveES.close()
         }
         if (window._liveES) { window._liveES.close(); window._liveES = null }
+        if (!state.token) return
         
-        console.log('Connecting to live stream...')
+        window._liveRetryAttempts = window._liveRetryAttempts || 0
+        if (window._liveRetryTimer) {
+          clearTimeout(window._liveRetryTimer)
+          window._liveRetryTimer = null
+        }
+
         window._liveES = new EventSource('/api/admin/live?token='+encodeURIComponent(state.token))
         
-        window._liveES.onopen = () => console.log('Live stream connected')
+        let closedByAuth = false
+        
+        window._liveES.onopen = () => { window._liveRetryAttempts = 0 }
         
         window._liveES.onerror = function(e) {
-          console.log('Live stream error, closing', e)
-          if (window._liveES) { window._liveES.close(); window._liveES = null }
-          // Retry after 5s
-          setTimeout(() => ensureLive(), 5000)
+          if (closedByAuth) return
+          try {
+            if (window._liveES && (window._liveES.readyState === 2 || window._liveES.readyState === 0)) {
+              closedByAuth = true
+              if (window._liveES) { window._liveES.close(); window._liveES = null }
+              if (window._liveRetryAttempts === 0) {
+                fetch('/api/admin/users', { headers: { 'Authorization': 'Bearer ' + state.token } }).then(r => {
+                  if (r.status === 401) handleAuthFailure()
+                  else scheduleLiveRetry()
+                }).catch(() => scheduleLiveRetry())
+              } else {
+                scheduleLiveRetry()
+              }
+              return
+            }
+          } catch {}
+          if (window._liveES) { try { window._liveES.close() } catch {}; window._liveES = null }
+          scheduleLiveRetry()
+        }
+        
+        function scheduleLiveRetry() {
+          window._liveRetryAttempts = (window._liveRetryAttempts || 0) + 1
+          const base = Math.min(window._liveRetryAttempts, 8)
+          const delay = 5000 * base
+          if (window._liveRetryTimer) clearTimeout(window._liveRetryTimer)
+          window._liveRetryTimer = setTimeout(() => { window._liveRetryTimer = null; if (!window._authInvalidated) ensureLive() }, delay)
         }
         
         window._liveES.onmessage = (ev) => {
           try {
             const p = JSON.parse(ev.data)
-            if (p && p.type === 'catch') addCatchRow(p.item)
+            if (p && p.type === 'catch') {
+              registerLiveEvent('catch', p.item || p)
+              addCatchRow(p.item)
+            }
             else if (p && p.type === 'alert') {
+              registerLiveEvent('alert', p.item || p)
               addAlertRow(p.item)
               playNotificationSound()
             }
             else if (p && p.type === 'status' && p.userId != null) {
+              registerLiveEvent('status', p)
               applyStatusEvent(p)
               if (state.currentModule === 'mod_map') {
                 const n = state.latestLocations ? Array.from(state.latestLocations.values()).filter(x => x && x.active !== false).length : 0
                 setUserMapStatus(`${n} active user(s)`)
               }
             }
+            else if (p && p.type === 'track') {
+              registerLiveEvent('track', p)
+              addTrackPointToMap(p)
+            }
             else if (p && p.type === 'track_stop' && p.userId != null) {
+              registerLiveEvent('track_stop', p)
               const uid = String(p.userId)
               const np = normalizeTrackPoint({ ...p, active: false, recordedAt: p.at || p.recordedAt })
               if (np) {
@@ -1468,6 +1810,7 @@
             else {
               const np = normalizeTrackPoint(p)
               if (np) {
+                registerLiveEvent('track', np)
                 if (!state.latestLocations) state.latestLocations = new Map()
                 state.latestLocations.set(np.userId, np)
                 upsertUserMarker(np)
@@ -1477,16 +1820,36 @@
                 }
               }
             }
+            if (state.currentModule === 'mod_live') markModuleRead('mod_live')
           } catch {}
         }
       }
-      function addCatchRow(c) {
-        const ct = document.getElementById('catches')
-        if (!ct || !ct.innerHTML) return
-        const thumb = c.photoUrl ? `<a target="_blank" href="${c.photoUrl}"><img src="${c.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
-        const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td>${c.netType || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
-        ct.innerHTML += row
-      }
+        function addCatchRow(c) {
+         const ct = document.getElementById('catches')
+         if (!ct || !ct.innerHTML) return
+         const isSummaryView = ct.querySelector('th') && ct.querySelector('th').textContent.includes('Latest Catch')
+         if (isSummaryView) {
+           if (!state.catches) state.catches = []
+           if (!state.catches.some(x => x.id === c.id)) state.catches.unshift(c)
+           if (!state.catchesSummary) state.catchesSummary = []
+           const existing = state.catchesSummary.find(s => s.userId === c.userId)
+           if (existing) {
+             existing.totalCatches += 1
+             existing.latestCapturedAt = c.capturedAt || c.createdAt
+             existing.latestSpecies = c.species
+           }
+           if (state.currentModule === 'mod_catches') renderCatchesSummary(state.catchesSummary)
+           refreshSidebarBadges()
+           return
+         }
+         const thumb = c.photoUrl ? `<a target="_blank" href="${c.photoUrl}"><img src="${c.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
+         const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td>${c.netType || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+         ct.insertRow(1).outerHTML = row
+         if (!state.catches) state.catches = []
+         if (!state.catches.some(x => x.id === c.id)) state.catches.unshift(c)
+         if (state.currentModule === 'mod_catches') markModuleRead('mod_catches')
+         else refreshSidebarBadges()
+       }
       function addAlertRow(a) {
         const at = document.getElementById('alerts')
         if (!at || !at.innerHTML) return
@@ -1501,6 +1864,10 @@
         const typeDisplay = typeStyle ? `<span style="${typeStyle}">${a.type}</span>` : a.type
         const row = `<tr><td>${typeDisplay}</td><td>${a.status||''}</td><td>${uname}</td><td>${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}</td><td>${new Date(a.recordedAt).toLocaleString()}</td><td>${actions}</td></tr>`
         at.innerHTML += row
+        if (!state.alerts) state.alerts = []
+        if (!state.alerts.some(x => x.id === a.id)) state.alerts.unshift(a)
+        if (state.currentModule === 'mod_alerts') markModuleRead('mod_alerts')
+        else refreshSidebarBadges()
       }
       function playNotificationSound() {
         try {
@@ -1563,44 +1930,503 @@
         if (ov) ov.style.display = 'none'
         const box = document.getElementById('history_popup')
         if (box) box.innerHTML = ''
+        if (state.historyMap) {
+          try { state.historyMap.map.remove() } catch {}
+          state.historyMap = null
+          state.historyRoute = null
+        }
+        state.currentHistoryUserId = null
+        state.trackHistory = []
+        state.historySelectedTracks.clear()
       }
-      async function openUserHistory(userId) {
+      function getHistoryDateRange(filter, customFrom, customTo) {
+        const now = new Date()
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        switch(filter) {
+          case 'today': return { from: todayStart.toISOString(), to: now.toISOString() }
+          case 'yesterday': {
+            const yestEnd = new Date(todayStart.getTime() - 1)
+            const yestStart = new Date(yestEnd.getFullYear(), yestEnd.getMonth(), yestEnd.getDate())
+            return { from: yestStart.toISOString(), to: yestEnd.toISOString() }
+          }
+          case 'last7': return { from: new Date(todayStart.getTime() - 7*24*60*60*1000).toISOString(), to: now.toISOString() }
+          case 'last30': return { from: new Date(todayStart.getTime() - 30*24*60*60*1000).toISOString(), to: now.toISOString() }
+          case 'custom': return { from: customFrom ? new Date(customFrom).toISOString() : null, to: customTo ? new Date(customTo + 'T23:59:59').toISOString() : null }
+          case 'all': return { from: null, to: null }
+          default: return { from: null, to: null }
+        }
+      }
+      async function openUserTrackHistory(userId) {
         if (!userId) return
+        state.currentHistoryUserId = userId
+        state.currentHistoryFilter = 'all'
+        state.historySelectedTracks.clear()
+        
         const ov = document.getElementById('history_overlay')
         const box = document.getElementById('history_popup')
         if (!ov || !box) return
+        
         ov.style.display = 'flex'
-        box.innerHTML = `<h3>History</h3><div class="small">Loading...</div><div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px"><button onclick="closeHistory()">Close</button></div>`
+        box.style.maxWidth = '1100px'
+        box.style.maxHeight = '90vh'
+        box.style.overflowY = 'auto'
+        box.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+            <h3 style="margin:0">GPS TRACK HISTORY</h3>
+            <button onclick="closeHistory()" style="width:auto; height:auto; padding:8px 16px">Close</button>
+          </div>
+          <div id="history_user_info" class="small" style="margin-bottom:12px; color:var(--text-muted)">Loading...</div>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
+            <select id="historyDateFilter" onchange="onHistoryDateFilterChange()" style="width:auto; margin:0">
+              <option value="all">All History</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 Days</option>
+              <option value="last30">Last 30 Days</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+            <input id="historyFrom" type="date" style="display:none; width:auto; margin:0" />
+            <input id="historyTo" type="date" style="display:none; width:auto; margin:0" />
+            <button onclick="loadTrackHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0"><i class="fa-solid fa-filter"></i> Apply Filter</button>
+            <button onclick="confirmDeleteUserHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0; background:#ff3b30"><i class="fa-solid fa-trash-can"></i> Delete All History</button>
+          </div>
+          <div id="history_map" style="width:100%; height:320px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-bottom:12px"></div>
+          <div style="max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius:12px">
+            <table id="history_table" style="margin-top:0">
+              <thead>
+                <tr><th style="width:36px; text-align:center"><input type="checkbox" id="selectAllHistoryTracks" onchange="toggleSelectAllHistory(this.checked)" /></th><th>Coordinates</th><th>Date</th><th>Time</th><th>Action</th></tr>
+              </thead>
+              <tbody><tr><td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+            <button onclick="confirmDeleteSelectedHistoryTracks()" style="background:#ff3b30; width:auto; padding:8px 16px; height:auto; font-size:13px"><i class="fa-solid fa-trash-can"></i> Delete Selected (<span id="selectedHistoryCount">0</span>)</button>
+            <button onclick="closeHistory()" style="width:auto; padding:8px 16px; height:auto; font-size:13px">Close</button>
+          </div>
+        `
+        await loadTrackHistory()
+      }
+
+      async function loadTrackHistory() {
+        const userId = state.currentHistoryUserId
+        if (!userId) return
+        
+        const filterVal = document.getElementById('historyDateFilter').value
+        const customFrom = document.getElementById('historyFrom').value
+        const customTo = document.getElementById('historyTo').value
+        const range = getHistoryDateRange(filterVal, customFrom, customTo)
+        
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        let url = '/api/admin/tracks?userId=' + encodeURIComponent(userId)
+        if (range.from) url += '&from=' + encodeURIComponent(range.from)
+        if (range.to) url += '&to=' + encodeURIComponent(range.to)
+        
         try {
-          const headers = { 'Authorization': 'Bearer ' + state.token }
-          const r = await fetch('/api/admin/status_history?userId=' + encodeURIComponent(String(userId)) + '&limit=200', { headers })
+          const r = await fetch(url, { headers })
           const d = await r.json()
-          if (!r.ok) throw new Error(d.error || 'Failed to load history')
-          const latest = state.latestLocations ? state.latestLocations.get(String(userId)) : null
-          const label = getUserLabel(String(userId), latest ? latest.user : null)
-          const curStatusText = latest && latest.status === 'port' ? 'In Port' : (latest && latest.status === 'transit' ? 'In Transit' : 'Unknown')
-          const curWhen = latest && latest.statusAt ? new Date(latest.statusAt).toLocaleString() : ''
-          const curLoc = latest && Number.isFinite(latest.lat) && Number.isFinite(latest.lng) ? `${latest.lat.toFixed(5)}, ${latest.lng.toFixed(5)}` : ''
-          const rows = (Array.isArray(d) ? d : []).map(e => {
-            const stText = e.status === 'port' ? 'In Port' : (e.status === 'transit' ? 'In Transit' : String(e.status || ''))
-            const when = e.at ? new Date(e.at).toLocaleString() : ''
-            const hasLoc = e.lat != null && e.lng != null
-            const loc = hasLoc ? `${Number(e.lat).toFixed(5)}, ${Number(e.lng).toFixed(5)}` : ''
-            const link = hasLoc ? ` <a target="_blank" href="https://maps.google.com/?q=${Number(e.lat)},${Number(e.lng)}" class="small">Map</a>` : ''
-            return `<div style="padding:10px 0; border-top:1px solid var(--border)"><div style="font-weight:600">${stText}</div><div class="small">${when}${loc ? (' • ' + loc) : ''}${link}</div></div>`
-          }).join('')
-          box.innerHTML = `
-            <h3>${label}</h3>
-            <div class="small">${curStatusText}${curWhen ? (' • ' + curWhen) : ''}${curLoc ? (' • ' + curLoc) : ''}</div>
-            <div style="margin-top:14px; max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius:12px; padding:0 12px">
-              ${rows || `<div style="padding:10px 0" class="small">No status events yet.</div>`}
-            </div>
-            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
-              <button onclick="closeHistory()">Close</button>
-            </div>
-          `
+          if (!r.ok) throw new Error(d.error || 'Failed to load track history')
+          state.trackHistory = (Array.isArray(d) ? d : []).sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
+          renderTrackHistory()
+          updateHistoryMap()
+          updateUserHistoryInfo(userId)
         } catch (e) {
-          box.innerHTML = `<h3>History</h3><div class="small" style="color:var(--error)">${e.message || 'Failed to load history'}</div><div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px"><button onclick="closeHistory()">Close</button></div>`
+          const tbl = document.getElementById('history_table')
+          if (tbl) tbl.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--error)">${e.message || 'Failed to load history'}</td></tr>`
+        }
+      }
+
+      function updateUserHistoryInfo(userId) {
+        const infoEl = document.getElementById('history_user_info')
+        if (!infoEl) return
+        const summary = (state.tracksSummary || []).find(s => s.userId === userId)
+        const latest = state.trackHistory[0]
+        const name = summary ? (summary.userName || userId) : userId
+        const email = summary ? (summary.userEmail || '') : ''
+        const latestCoord = latest && latest.lat != null && latest.lng != null ? `${latest.lat.toFixed(5)}, ${latest.lng.toFixed(5)}` : '—'
+        const latestTime = latest ? new Date(latest.recordedAt).toLocaleString() : '—'
+        infoEl.innerHTML = `<b style="color:var(--text-main); font-size:14px">${name}</b>${email ? ' • ' + email : ''}<br/>Latest: ${latestCoord} • ${latestTime}`
+      }
+
+      function renderTrackHistory() {
+        const tbl = document.getElementById('history_table')
+        if (!tbl) return
+        const thead = tbl.querySelector('thead')
+        tbl.innerHTML = ''
+        if (thead) tbl.appendChild(thead)
+        else {
+          tbl.innerHTML = '<tr><th style="width:36px; text-align:center"><input type="checkbox" id="selectAllHistoryTracks" onchange="toggleSelectAllHistory(this.checked)" /></th><th>Coordinates</th><th>Date</th><th>Time</th><th>Action</th></tr>'
+        }
+        const tbody = tbl.querySelector('tbody') || document.createElement('tbody')
+        tbody.innerHTML = ''
+        if (!state.trackHistory || state.trackHistory.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted)">No GPS records found for this user.</td></tr>'
+        } else {
+          state.trackHistory.forEach(t => {
+            const checked = state.historySelectedTracks.has(t.id) ? 'checked' : ''
+            const date = t.recordedAt ? new Date(t.recordedAt) : null
+            const dateStr = date ? date.toLocaleDateString() : '—'
+            const timeStr = date ? date.toLocaleTimeString() : '—'
+            const coordStr = t.lat != null && t.lng != null ? `${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}` : '—'
+            tbody.innerHTML += `<tr><td style="text-align:center"><input type="checkbox" class="history-track-checkbox" data-id="${t.id}" onchange="toggleSingleHistoryTrack('${t.id}', this.checked)" ${checked} /></td><td><a target="_blank" href="https://maps.google.com/?q=${t.lat},${t.lng}">${coordStr}</a></td><td>${dateStr}</td><td>${timeStr}</td><td><button onclick="confirmDeleteHistoryTrack('${t.id}')">Delete</button></td></tr>`
+          })
+        }
+        if (!tbl.querySelector('tbody')) tbl.appendChild(tbody)
+        const allChecked = state.trackHistory.length > 0 && state.trackHistory.every(t => state.historySelectedTracks.has(t.id))
+        const selectAll = document.getElementById('selectAllHistoryTracks')
+        if (selectAll) selectAll.checked = allChecked
+        updateSelectedHistoryUi()
+      }
+
+      function toggleSelectAllHistory(checked) {
+        if (checked) {
+          state.trackHistory.forEach(t => state.historySelectedTracks.add(t.id))
+        } else {
+          state.historySelectedTracks.clear()
+        }
+        document.querySelectorAll('.history-track-checkbox').forEach(cb => {
+          const id = cb.getAttribute('data-id')
+          cb.checked = state.historySelectedTracks.has(id)
+        })
+        updateSelectedHistoryUi()
+      }
+
+      function toggleSingleHistoryTrack(id, checked) {
+        if (checked) state.historySelectedTracks.add(id)
+        else state.historySelectedTracks.delete(id)
+        const allChecked = state.trackHistory.length > 0 && state.trackHistory.every(t => state.historySelectedTracks.has(t.id))
+        const selectAll = document.getElementById('selectAllHistoryTracks')
+        if (selectAll) selectAll.checked = allChecked
+        updateSelectedHistoryUi()
+      }
+
+      function updateSelectedHistoryUi() {
+        const count = state.historySelectedTracks.size
+        const countEl = document.getElementById('selectedHistoryCount')
+        if (countEl) countEl.textContent = count
+      }
+
+      function onHistoryDateFilterChange() {
+        const filterVal = document.getElementById('historyDateFilter').value
+        const fromEl = document.getElementById('historyFrom')
+        const toEl = document.getElementById('historyTo')
+        if (filterVal === 'custom') {
+          if (fromEl) fromEl.style.display = ''
+          if (toEl) toEl.style.display = ''
+        } else {
+          if (fromEl) fromEl.style.display = 'none'
+          if (toEl) toEl.style.display = 'none'
+        }
+      }
+
+      function updateHistoryMap() {
+        if (!state.historyMap) initHistoryMap()
+        if (!state.historyMap) return
+        const map = state.historyMap.map
+        if (state.historyRoute) {
+          try { state.historyRoute.remove() } catch {}
+          state.historyRoute = null
+        }
+        state.historyMap.markersByUserId.forEach(m => { try { m.remove() } catch {} })
+        state.historyMap.markersByUserId = new Map()
+        
+        const pts = (state.trackHistory || []).filter(t => t.lat != null && t.lng != null)
+        if (pts.length === 0) return
+        
+        const latLngs = pts.map(t => [t.lat, t.lng])
+        const polyline = window.L.polyline(latLngs, { color: '#0077B6', weight: 4, opacity: 0.85 })
+        polyline.addTo(map)
+        state.historyRoute = polyline
+        
+        pts.forEach((t, i) => {
+          const marker = window.L.circleMarker([t.lat, t.lng], { radius: 6, color: '#0077B6', weight: 2, opacity: 1, fillColor: '#00B4D8', fillOpacity: 0.9 })
+          marker.addTo(map)
+          marker.bindPopup(`<b>Point ${i+1}</b><br/>${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}<br/>${new Date(t.recordedAt).toLocaleString()}`)
+          state.historyMap.markersByUserId.set(t.id, marker)
+        })
+        
+        try {
+          const bounds = window.L.latLngBounds(latLngs)
+          map.fitBounds(bounds.pad(0.2), { animate: false })
+        } catch {}
+      }
+
+      function initHistoryMap() {
+        const el = document.getElementById('history_map')
+        if (!el || !window.L) return
+        if (state.historyMap) {
+          try { state.historyMap.map.remove() } catch {}
+        }
+        const map = window.L.map(el, { zoomControl: true })
+        window.L.tileLayer('/api/public/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map)
+        map.setView([12.5, 122.0], 6)
+        state.historyMap = { map, markersByUserId: new Map(), route: null }
+      }
+
+      async function confirmDeleteUserHistory() {
+        const userId = state.currentHistoryUserId
+        if (!userId) return
+        const summary = (state.tracksSummary || []).find(s => s.userId === userId)
+        const name = summary ? (summary.userName || userId) : userId
+        openConfirm(`Are you sure you want to delete all GPS tracking history for ${name}?`, function(){ deleteUserHistory(userId) })
+      }
+
+      async function deleteUserHistory(userId) {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/tracks/user/' + encodeURIComponent(userId), { method:'DELETE', headers })
+        closeHistory()
+        loadData()
+      }
+
+      async function confirmDeleteSelectedHistoryTracks() {
+        const count = state.historySelectedTracks.size
+        if (count === 0) return
+        openConfirm(`Are you sure you want to delete the selected ${count} GPS track record(s)?`, function(){ deleteSelectedHistoryTracks() })
+      }
+
+      async function deleteSelectedHistoryTracks() {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        const ids = Array.from(state.historySelectedTracks)
+        const deletePromises = ids.map(id => 
+          fetch('/api/admin/tracks/' + id, { method:'DELETE', headers })
+        )
+        await Promise.all(deletePromises)
+        state.historySelectedTracks.clear()
+        loadTrackHistory()
+      }
+
+      async function confirmDeleteHistoryTrack(id) {
+        openConfirm('Delete this track record?', function(){ deleteHistoryTrack(id) })
+      }
+
+      async function deleteHistoryTrack(id) {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/tracks/' + id, { method:'DELETE', headers })
+        state.historySelectedTracks.delete(id)
+        loadTrackHistory()
+      }
+
+      function closeCatchHistory() {
+        const ov = document.getElementById('catch_history_overlay')
+        if (ov) ov.style.display = 'none'
+        const box = document.getElementById('catch_history_popup')
+        if (box) box.innerHTML = ''
+        if (state.catchHistoryMap) {
+          try { state.catchHistoryMap.map.remove() } catch {}
+          state.catchHistoryMap = null
+        }
+        state.currentCatchHistoryUserId = null
+        state.catchHistory = []
+        state.historySelectedCatches.clear()
+      }
+      function getCatchDateRange(filter, customFrom, customTo) {
+        const now = new Date()
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        switch(filter) {
+          case 'today': return { from: todayStart.toISOString(), to: now.toISOString() }
+          case 'yesterday': {
+            const yestEnd = new Date(todayStart.getTime() - 1)
+            const yestStart = new Date(yestEnd.getFullYear(), yestEnd.getMonth(), yestEnd.getDate())
+            return { from: yestStart.toISOString(), to: yestEnd.toISOString() }
+          }
+          case 'last7': return { from: new Date(todayStart.getTime() - 7*24*60*60*1000).toISOString(), to: now.toISOString() }
+          case 'last30': return { from: new Date(todayStart.getTime() - 30*24*60*60*1000).toISOString(), to: now.toISOString() }
+          case 'custom': return { from: customFrom ? new Date(customFrom).toISOString() : null, to: customTo ? new Date(customTo + 'T23:59:59').toISOString() : null }
+          case 'all': return { from: null, to: null }
+          default: return { from: null, to: null }
+        }
+      }
+      async function openCatchHistory(userId) {
+        if (!userId) return
+        state.currentCatchHistoryUserId = userId
+        state.currentCatchHistoryFilter = 'all'
+        state.historySelectedCatches.clear()
+        
+        const ov = document.getElementById('catch_history_overlay')
+        const box = document.getElementById('catch_history_popup')
+        if (!ov || !box) return
+        
+        ov.style.display = 'flex'
+        box.style.maxWidth = '1200px'
+        box.style.maxHeight = '90vh'
+        box.style.overflowY = 'auto'
+        box.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+            <h3 style="margin:0">CATCH HISTORY</h3>
+            <button onclick="closeCatchHistory()" style="width:auto; height:auto; padding:8px 16px">Close</button>
+          </div>
+          <div id="catch_history_user_info" class="small" style="margin-bottom:12px; color:var(--text-muted)">Loading...</div>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
+            <select id="catchDateFilter" onchange="onCatchDateFilterChange()" style="width:auto; margin:0">
+              <option value="all">All History</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last7">Last 7 Days</option>
+              <option value="last30">Last 30 Days</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+            <input id="catchFrom" type="date" style="display:none; width:auto; margin:0" />
+            <input id="catchTo" type="date" style="display:none; width:auto; margin:0" />
+            <button onclick="loadCatchHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0"><i class="fa-solid fa-filter"></i> Apply Filter</button>
+            <button onclick="confirmDeleteUserCatchHistory()" style="width:auto; height:auto; padding:8px 16px; margin:0; background:#ff3b30"><i class="fa-solid fa-trash-can"></i> Delete All History</button>
+          </div>
+          <div id="catch_history_map" style="width:100%; height:320px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-bottom:12px"></div>
+          <div style="max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius:12px">
+            <table id="catch_history_table" style="margin-top:0">
+              <thead>
+                <tr><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>
+              </thead>
+              <tbody><tr><td colspan="8" style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
+            <button onclick="closeCatchHistory()" style="width:auto; padding:8px 16px; height:auto; font-size:13px">Close</button>
+          </div>
+        `
+        await loadCatchHistory()
+      }
+
+      async function loadCatchHistory() {
+        const userId = state.currentCatchHistoryUserId
+        if (!userId) return
+        
+        const filterVal = document.getElementById('catchDateFilter').value
+        const customFrom = document.getElementById('catchFrom').value
+        const customTo = document.getElementById('catchTo').value
+        const range = getCatchDateRange(filterVal, customFrom, customTo)
+        
+        const headers = { 'Authorization': 'Bearer ' + state.token }
+        let url = '/api/catches?userId=' + encodeURIComponent(userId)
+        if (range.from) url += '&from=' + encodeURIComponent(range.from)
+        if (range.to) url += '&to=' + encodeURIComponent(range.to)
+        
+        try {
+          const r = await fetch(url, { headers })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error || 'Failed to load catch history')
+          state.catchHistory = (Array.isArray(d) ? d : []).sort((a, b) => new Date(b.capturedAt || b.createdAt) - new Date(a.capturedAt || a.createdAt))
+          renderCatchHistory()
+          updateCatchHistoryMap()
+          updateCatchHistoryUserInfo(userId)
+        } catch (e) {
+          const tbl = document.getElementById('catch_history_table')
+          if (tbl) tbl.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:var(--error)">${e.message || 'Failed to load history'}</td></tr>`
+        }
+      }
+
+      function updateCatchHistoryUserInfo(userId) {
+        const infoEl = document.getElementById('catch_history_user_info')
+        if (!infoEl) return
+        const summary = (state.catchesSummary || []).find(s => s.userId === userId)
+        const latest = state.catchHistory[0]
+        const name = summary ? (summary.userName || userId) : userId
+        const email = summary ? (summary.userEmail || '') : ''
+        const barangay = summary ? (summary.barangay || '—') : '—'
+        const totalCatches = summary ? summary.totalCatches : (state.catchHistory ? state.catchHistory.length : 0)
+        const latestTime = latest ? new Date(latest.capturedAt || latest.createdAt).toLocaleString() : '—'
+        infoEl.innerHTML = `<b style="color:var(--text-main); font-size:14px">${name}</b>${email ? ' • ' + email : ''}${barangay !== '—' ? ' • ' + barangay : ''}<br/>Total Catches: ${totalCatches} • Latest: ${latestTime}`
+      }
+
+      function renderCatchHistory() {
+        const tbl = document.getElementById('catch_history_table')
+        if (!tbl) return
+        const thead = tbl.querySelector('thead')
+        tbl.innerHTML = ''
+        if (thead) tbl.appendChild(thead)
+        else {
+          tbl.innerHTML = '<tr><th>Species</th><th>Weight</th><th>Length</th><th>Net/Gear</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
+        }
+        const tbody = tbl.querySelector('tbody') || document.createElement('tbody')
+        tbody.innerHTML = ''
+        if (!state.catchHistory || state.catchHistory.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:var(--text-muted)">No catch records found for this user.</td></tr>'
+        } else {
+          state.catchHistory.forEach(c => {
+            const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
+            const date = c.capturedAt ? new Date(c.capturedAt) : (c.createdAt ? new Date(c.createdAt) : null)
+            const captured = date ? date.toLocaleString() : '—'
+            const coordStr = c.lat != null && c.lng != null ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}` : '—'
+            tbody.innerHTML += `<tr data-id="${c.id}"><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="ng">${netGear}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${coordStr}</a></td><td>${captured}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="confirmDeleteCatchHistoryTrack('${c.id}')">Delete</button></td></tr>`
+          })
+        }
+        if (!tbl.querySelector('tbody')) tbl.appendChild(tbody)
+      }
+
+      function onCatchDateFilterChange() {
+        const filterVal = document.getElementById('catchDateFilter').value
+        const fromEl = document.getElementById('catchFrom')
+        const toEl = document.getElementById('catchTo')
+        if (filterVal === 'custom') {
+          if (fromEl) fromEl.style.display = ''
+          if (toEl) toEl.style.display = ''
+        } else {
+          if (fromEl) fromEl.style.display = 'none'
+          if (toEl) toEl.style.display = 'none'
+        }
+      }
+
+      function updateCatchHistoryMap() {
+        if (!state.catchHistoryMap) initCatchHistoryMap()
+        if (!state.catchHistoryMap) return
+        const map = state.catchHistoryMap.map
+        state.catchHistoryMap.markersByUserId.forEach(m => { try { m.remove() } catch {} })
+        state.catchHistoryMap.markersByUserId = new Map()
+        
+        const pts = (state.catchHistory || []).filter(c => c.lat != null && c.lng != null)
+        if (pts.length === 0) return
+        
+        pts.forEach((c, i) => {
+          const marker = window.L.circleMarker([c.lat, c.lng], { radius: 7, color: '#06D6A0', weight: 2, opacity: 1, fillColor: '#06D6A0', fillOpacity: 0.9 })
+          marker.addTo(map)
+          const netGear = [c.netType, c.gear].filter(Boolean).join(' / ')
+          const date = c.capturedAt ? new Date(c.capturedAt) : (c.createdAt ? new Date(c.createdAt) : null)
+          marker.bindPopup(`<b>${c.species}</b><br/><b>Weight:</b> ${c.weightKg || '—'}<br/><b>Length:</b> ${c.lengthCm || '—'}<br/><b>Net/Gear:</b> ${netGear || '—'}<br/><b>Vessel:</b> ${c.vesselName || c.vessel || '—'}<br/><b>Time:</b> ${date ? date.toLocaleString() : '—'}<br/><b>Coords:</b> ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`)
+          state.catchHistoryMap.markersByUserId.set(c.id, marker)
+        })
+        
+        try {
+          const bounds = window.L.latLngBounds(pts.map(c => [c.lat, c.lng]))
+          map.fitBounds(bounds.pad(0.2), { animate: false })
+        } catch {}
+      }
+
+      function initCatchHistoryMap() {
+        const el = document.getElementById('catch_history_map')
+        if (!el || !window.L) return
+        if (state.catchHistoryMap) {
+          try { state.catchHistoryMap.map.remove() } catch {}
+        }
+        const map = window.L.map(el, { zoomControl: true })
+        window.L.tileLayer('/api/public/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map)
+        map.setView([12.5, 122.0], 6)
+        state.catchHistoryMap = { map, markersByUserId: new Map() }
+      }
+
+      async function confirmDeleteUserCatchHistory() {
+        const userId = state.currentCatchHistoryUserId
+        if (!userId) return
+        const summary = (state.catchesSummary || []).find(s => s.userId === userId)
+        const name = summary ? (summary.userName || userId) : userId
+        openConfirm(`Are you sure you want to delete all catch records for ${name}? This action cannot be undone.`, function(){ deleteUserCatchHistory(userId) })
+      }
+
+      async function deleteUserCatchHistory(userId) {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/catches/user/' + encodeURIComponent(userId), { method:'DELETE', headers })
+        closeCatchHistory()
+        loadData()
+      }
+
+      async function confirmDeleteCatchHistoryTrack(id) {
+        openConfirm('Delete this catch record?', function(){ deleteCatchHistoryTrack(id) })
+      }
+
+      async function deleteCatchHistoryTrack(id) {
+        const headers = { 'Authorization':'Bearer '+state.token }
+        await fetch('/api/admin/catches/' + id, { method:'DELETE', headers })
+        if (state.currentCatchHistoryUserId) {
+          loadCatchHistory()
+        } else {
+          loadData()
         }
       }
       function openConfirm(text, onYes){

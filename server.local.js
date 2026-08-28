@@ -145,13 +145,16 @@ function normalizeVesselRecord(record) {
     vessel_name: normalizeText(record.vessel_name),
     owner_name: normalizeText(record.owner_name),
     barangay: normalizeText(record.barangay),
+    userId: record.userId != null ? String(record.userId) : null,
     createdAt: record.createdAt || record.created_at || new Date().toISOString(),
     updatedAt: record.updatedAt || record.updated_at || new Date().toISOString()
   }
 }
 
 function getAllVesselsLocal() {
-  return (vesselsDb.get('vessels').value() || []).map(normalizeVesselRecord)
+  return (vesselsDb.get('vessels').value() || [])
+    .map(normalizeVesselRecord)
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
 }
 
 function findVesselByIdLocal(id) {
@@ -182,6 +185,7 @@ function seedLocalVesselsFromLegacyData() {
       vessel_registration_number: reg,
       vessel_name: name,
       owner_name: owner,
+      userId: u.id,
       createdAt: u.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
@@ -199,6 +203,7 @@ function seedLocalVesselsFromLegacyData() {
       vessel_registration_number: reg,
       vessel_name: name,
       owner_name: owner,
+      userId: c.userId || null,
       createdAt: c.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
@@ -255,6 +260,14 @@ function enrichCatchWithVesselLocal(catchItem) {
 }
 
 seedLocalVesselsFromLegacyData()
+
+try {
+  const admin = usersDb.get('users').find(u => u.role === 'admin').value()
+  const unassignedVessels = vesselsDb.get('vessels').filter(v => !v.userId).value()
+  if (admin && unassignedVessels.length > 0) {
+    vesselsDb.get('vessels').filter(v => !v.userId).assign({ userId: admin.id }).write()
+  }
+} catch {}
 
 const initialSpecies = [
   'Galunggong (Mackerel Scad)',
@@ -323,6 +336,21 @@ function auth(requiredRole) {
   }
 }
 
+function isAdmin(u) { return u && u.role === 'admin' }
+function isSelfOrAdmin(req, ownerId) {
+  if (isAdmin(req.user)) return true
+  return String(ownerId || '') === String(req.user.id || '')
+}
+function scopeByUser(req, list, ownerKey = 'userId') {
+  if (isAdmin(req.user)) return list || []
+  const selfId = String(req.user.id || '')
+  const key = ownerKey
+  return (list || []).filter(item => {
+    const owner = item && item[key] != null ? item[key] : (item && item.user_id != null ? item.user_id : null)
+    return String(owner || '') === selfId
+  })
+}
+
 app.post('/api/auth/register', async (req, res) => {
   let { name, email, password, role } = req.body
   if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' })
@@ -358,19 +386,20 @@ app.get('/api/dashboard/stats', auth(), async (req, res) => {
     const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-    // 1. Total catch today (kg)
-    const catchesToday = catchesDb.get('catches').filter(c => new Date(c.capturedAt || c.createdAt) >= startOfToday).value() || []
+    // 1. Total catch today (kg) for current user
+    const catchesToday = catchesDb.get('catches').filter(c => c.userId === req.user.id && new Date(c.capturedAt || c.createdAt) >= startOfToday).value() || []
     const totalWeightToday = catchesToday.reduce((sum, c) => sum + (Number(c.weightKg) || 0), 0)
 
-    // 2. Active vessels
+    // 2. Active vessels for current user
     let activeVessels = 0
-    trackingStateByUserId.forEach(v => { if (v.active) activeVessels++ })
+    const myTracking = trackingStateByUserId.get(req.user.id)
+    if (myTracking && myTracking.active) activeVessels = 1
 
-    // 3. Total coastal activities this week
-    const activitiesWeek = activityDb.get('activity_logs').filter(a => new Date(a.created_at) >= startOfWeek).value() || []
+    // 3. Total coastal activities this week for current user
+    const activitiesWeek = activityDb.get('activity_logs').filter(a => a.user_id === req.user.id && new Date(a.created_at) >= startOfWeek).value() || []
 
-    // 4. Top 3 species this month
-    const monthlyCatches = catchesDb.get('catches').filter(c => new Date(c.capturedAt || c.createdAt) >= startOfMonth).value() || []
+    // 4. Top 3 species this month (current user)
+    const monthlyCatches = catchesDb.get('catches').filter(c => c.userId === req.user.id && new Date(c.capturedAt || c.createdAt) >= startOfMonth).value() || []
     const speciesCounts = monthlyCatches.reduce((acc, c) => {
       const s = c.species || 'Unknown'
       acc[s] = (acc[s] || 0) + 1
@@ -381,7 +410,7 @@ app.get('/api/dashboard/stats', auth(), async (req, res) => {
       .slice(0, 3)
       .map(([name, count]) => ({ name, count }))
 
-    // 5. Monthly catch trend (last 6 months)
+    // 5. Monthly catch trend by species (last 6 months, current user)
     const trend = []
     for (let i = 5; i >= 0; i--) {
       const d = new Date()
@@ -390,18 +419,29 @@ app.get('/api/dashboard/stats', auth(), async (req, res) => {
       const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
       const mData = catchesDb.get('catches').filter(c => {
         const cat = new Date(c.capturedAt || c.createdAt)
-        return cat >= mStart && cat <= mEnd
+        return c.userId === req.user.id && cat >= mStart && cat <= mEnd
       }).value() || []
-      const mWeight = mData.reduce((sum, c) => sum + (Number(c.weightKg) || 0), 0)
-      trend.push({ month: d.toLocaleString('default', { month: 'short' }), weight: mWeight })
+      const bySpecies = {}
+      mData.forEach(c => {
+        const s = c.species || 'Unknown'
+        bySpecies[s] = (bySpecies[s] || 0) + (Number(c.weightKg) || 0)
+      })
+      trend.push({ month: d.toLocaleString('default', { month: 'short' }), species: bySpecies })
     }
+    const allSpecies = new Set()
+    trend.forEach(t => Object.keys(t.species).forEach(s => allSpecies.add(s)))
+    const months = trend.map(t => t.month)
+    const series = Array.from(allSpecies).map(species => ({
+      species,
+      data: trend.map(t => t.species[species] || 0)
+    }))
 
     res.json({
       totalWeightToday,
       activeVessels,
       activitiesWeek: activitiesWeek.length,
       topSpecies,
-      trend
+      trend: { months, series }
     })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -426,12 +466,22 @@ app.post('/api/public/install_admin', (req, res) => {
 })
 
 app.get('/api/vessels', auth(), async (req, res) => {
-  res.json(getAllVesselsLocal())
+  const userId = req.query && req.query.userId != null ? String(req.query.userId) : null
+  let list = getAllVesselsLocal()
+  if (!isAdmin(req.user)) {
+    const selfId = String(req.user.id || '')
+    if (userId && userId !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    list = list.filter(v => String(v.userId || '') === selfId)
+  } else if (userId) {
+    list = list.filter(v => String(v.userId || '') === userId)
+  }
+  res.json(list)
 })
 
 app.get('/api/vessels/:id', auth(), async (req, res) => {
   const vessel = findVesselByIdLocal(req.params.id)
   if (!vessel) return res.status(404).json({ error: 'Vessel not found' })
+  if (!isSelfOrAdmin(req, vessel.userId)) return res.status(403).json({ error: 'Forbidden' })
   res.json(vessel)
 })
 
@@ -452,6 +502,7 @@ app.post('/api/vessels', auth(), async (req, res) => {
     vessel_name,
     owner_name,
     barangay,
+    userId: req.user.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
@@ -463,6 +514,7 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
   const id = String(req.params.id)
   const existing = findVesselByIdLocal(id)
   if (!existing) return res.status(404).json({ error: 'Vessel not found' })
+  if (!isSelfOrAdmin(req, existing.userId)) return res.status(403).json({ error: 'Forbidden' })
 
   const vessel_registration_number = normalizeText(req.body.vessel_registration_number)
   const vessel_name = normalizeText(req.body.vessel_name)
@@ -486,6 +538,7 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
 
   ;(catchesDb.get('catches').value() || []).forEach(c => {
     if (String(c.vesselId || '') !== id) return
+    if (!isAdmin(req.user) && !isSelfOrAdmin(req, c.userId)) return
     catchesDb.get('catches').find({ id: c.id }).assign({
       vessel: vessel_name,
       vesselRegistrationNumber: vessel_registration_number,
@@ -603,12 +656,16 @@ app.get('/api/catches/me', auth(), async (req, res) => {
 })
 
 app.get('/api/catches', auth('admin'), async (req, res) => {
-  const allC = catchesDb.get('catches').value()
+  const { userId, from, to } = req.query
+  let allC = catchesDb.get('catches').value()
+  if (userId) allC = allC.filter(c => c.userId === userId)
+  if (from) allC = allC.filter(c => new Date(c.capturedAt || c.createdAt) >= new Date(from))
+  if (to) allC = allC.filter(c => new Date(c.capturedAt || c.createdAt) <= new Date(to))
   const allU = usersDb.get('users').value()
   const list = allC.map(c => ({
     ...enrichCatchWithVesselLocal(c),
     user: allU.find(u => u.id === c.userId) ? { id: c.userId, name: allU.find(u => u.id === c.userId).name, email: allU.find(u => u.id === c.userId).email } : null
-  }))
+  })).sort((a, b) => new Date(b.capturedAt || b.createdAt) - new Date(a.capturedAt || a.createdAt))
   res.json(list)
 })
 
@@ -639,6 +696,81 @@ app.delete('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
   const exists = catchesDb.get('catches').find({ id }).value(); if (!exists) return res.status(404).json({ error: 'Not found' })
   catchesDb.set('catches', catchesDb.get('catches').filter(c => c.id !== id).value()).write(); res.json({ ok: true })
+})
+
+app.patch('/api/catches/:id', auth(), async (req, res) => {
+  const id = req.params.id
+  const exists = catchesDb.get('catches').find({ id }).value()
+  if (!exists) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, exists.userId)) return res.status(403).json({ error: 'Forbidden' })
+  const allowed = ['species','weightKg','lengthCm','gear','note']
+  const updates = {}
+  allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k] })
+  if (req.body.vesselId !== undefined) {
+    try {
+      const vesselInfo = resolveCatchVesselLocal(req.body)
+      Object.assign(updates, {
+        vesselId: vesselInfo.vesselId,
+        vessel: vesselInfo.vessel,
+        vesselRegistrationNumber: vesselInfo.vesselRegistrationNumber,
+        vesselName: vesselInfo.vesselName,
+        ownerName: vesselInfo.ownerName
+      })
+    } catch (e) {
+      return res.status(e.statusCode || 400).json({ error: e.message })
+    }
+  }
+  catchesDb.get('catches').find({ id }).assign(updates).write(); res.json({ ok: true })
+})
+
+app.delete('/api/catches/:id', auth(), async (req, res) => {
+  const id = req.params.id
+  const exists = catchesDb.get('catches').find({ id }).value()
+  if (!exists) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, exists.userId)) return res.status(403).json({ error: 'Forbidden' })
+  catchesDb.set('catches', catchesDb.get('catches').filter(c => c.id !== id).value()).write(); res.json({ ok: true })
+})
+
+app.get('/api/admin/catches/summary', auth('admin'), async (req, res) => {
+  const allC = catchesDb.get('catches').value()
+  const allU = usersDb.get('users').value()
+  const byUser = new Map()
+  allC.forEach(c => {
+    const uid = String(c.userId || 'unknown')
+    const cur = byUser.get(uid)
+    const t = new Date(c.capturedAt || c.createdAt || 0).getTime()
+    if (!cur || t > cur._t) {
+      const next = { ...c, _t: t, total: (cur ? cur.total : 0) + 1 }
+      byUser.set(uid, next)
+    } else {
+      cur.total = (cur ? cur.total : 0) + 1
+    }
+  })
+  const out = Array.from(byUser.values()).map(c => {
+    const u = allU.find(x => x.id === c.userId)
+    return {
+      userId: c.userId,
+      userName: u ? u.name : null,
+      userEmail: u ? u.email : null,
+      barangay: u ? (u.barangay || null) : null,
+      latestSpecies: c.species || null,
+      latestCapturedAt: c.capturedAt || c.createdAt,
+      totalCatches: c.total
+    }
+  }).sort((a, b) => {
+    const aT = a.latestCapturedAt ? new Date(a.latestCapturedAt).getTime() : 0
+    const bT = b.latestCapturedAt ? new Date(b.latestCapturedAt).getTime() : 0
+    return bT - aT
+  })
+  res.json(out)
+})
+
+app.delete('/api/admin/catches/user/:userId', auth('admin'), async (req, res) => {
+  const userId = String(req.params.userId)
+  const exists = catchesDb.get('catches').filter(c => c.userId === userId).value()
+  if (!exists || exists.length === 0) return res.status(404).json({ error: 'No catches found for this user' })
+  catchesDb.set('catches', catchesDb.get('catches').filter(c => c.userId !== userId).value()).write()
+  res.json({ ok: true, deleted: exists.length })
 })
 
 app.post('/api/track', auth(), async (req, res) => {
@@ -794,6 +926,7 @@ app.get('/api/status/me', auth(), async (req, res) => {
 
 app.get('/api/track/me', auth(), async (req, res) => {
   const points = tracksDb.get('tracks').filter(t => t.userId === req.user.id).value()
+    .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
   res.json(points)
 })
 
@@ -843,12 +976,55 @@ app.delete('/api/admin/users/:id', auth('admin'), async (req, res) => {
 })
 
 app.get('/api/admin/tracks', auth('admin'), async (req, res) => {
-  const pts = tracksDb.get('tracks').value(); const us = usersDb.get('users').value()
+  const userId = req.query && req.query.userId != null ? String(req.query.userId) : null
+  let pts = tracksDb.get('tracks').value()
+  if (userId) pts = pts.filter(t => String(t.userId) === userId)
+  const us = usersDb.get('users').value()
   const points = pts.map(p => ({
     ...p,
     user: us.find(u => u.id === p.userId) ? { id: p.userId, name: us.find(u => u.id === p.userId).name, email: us.find(u => u.id === p.userId).email } : null
-  }))
+  })).sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
   res.json(points)
+})
+app.get('/api/admin/tracks/summary', auth('admin'), async (req, res) => {
+  const pts = tracksDb.get('tracks').value()
+  const us = usersDb.get('users').value()
+  const byUser = new Map()
+  pts.forEach(p => {
+    const uid = String(p.userId || 'unknown')
+    const cur = byUser.get(uid)
+    const t = new Date(p.recordedAt || 0).getTime()
+    if (!cur || t > cur._t) {
+      const next = { ...p, _t: t, total: (cur ? cur.total : 0) + 1 }
+      byUser.set(uid, next)
+    } else {
+      cur.total = (cur ? cur.total : 0) + 1
+    }
+  })
+  const out = Array.from(byUser.values()).map(p => {
+    const u = us.find(x => x.id === p.userId)
+    return {
+      userId: p.userId,
+      userName: u ? u.name : null,
+      userEmail: u ? u.email : null,
+      latestLat: p.lat,
+      latestLng: p.lng,
+      latestRecordedAt: p.recordedAt,
+      totalTracks: p.total
+    }
+  }).sort((a, b) => {
+    const aT = a.latestRecordedAt ? new Date(a.latestRecordedAt).getTime() : 0
+    const bT = b.latestRecordedAt ? new Date(b.latestRecordedAt).getTime() : 0
+    return bT - aT
+  })
+  res.json(out)
+})
+app.delete('/api/admin/tracks/user/:userId', auth('admin'), async (req, res) => {
+  const userId = String(req.params.userId)
+  const exists = tracksDb.get('tracks').filter(t => String(t.userId) === userId).value()
+  if (!exists || exists.length === 0) return res.status(404).json({ error: 'No tracks found for this user' })
+  tracksDb.set('tracks', tracksDb.get('tracks').filter(t => String(t.userId) !== userId).value()).write()
+  res.json({ ok: true, deleted: exists.length })
 })
 app.get('/api/admin/status_history', auth(['admin','inspector']), async (req, res) => {
   const userId = req.query && req.query.userId != null ? String(req.query.userId) : null
@@ -856,7 +1032,13 @@ app.get('/api/admin/status_history', auth(['admin','inspector']), async (req, re
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 200
   const us = usersDb.get('users').value()
   let list = statusDb.get('status_events').value() || []
-  if (userId) list = list.filter(e => String(e.userId) === userId)
+  if (!isAdmin(req.user)) {
+    const selfId = String(req.user.id || '')
+    if (userId && userId !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    list = list.filter(e => String(e.userId || '') === selfId)
+  } else if (userId) {
+    list = list.filter(e => String(e.userId || '') === userId)
+  }
   list = list.slice().sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)).slice(0, limit)
   const out = list.map(e => {
     const u = us.find(x => x.id === e.userId)
@@ -864,7 +1046,7 @@ app.get('/api/admin/status_history', auth(['admin','inspector']), async (req, re
   })
   res.json(out)
 })
-app.get('/api/users', auth(), async (req, res) => {
+app.get('/api/users', auth('admin'), async (req, res) => {
   const all = usersDb.get('users').value()
   res.json(all.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, barangay: u.barangay || null, vessel_name: u.vessel_name || null, fisher_id: u.fisher_id || null, createdAt: u.createdAt })))
 })
@@ -872,6 +1054,7 @@ app.get('/api/users', auth(), async (req, res) => {
 app.get('/api/live_locations', auth(), (req, res) => {
   const pts = tracksDb.get('tracks').value()
   const us = usersDb.get('users').value()
+  const currentUserId = String(req.user.id)
 
   const latestByUserId = new Map()
   statusStateByUserId.forEach((st, userId) => {
@@ -895,7 +1078,7 @@ app.get('/api/live_locations', auth(), (req, res) => {
   })
   const activeUserIds = new Set()
   trackingStateByUserId.forEach((v, k) => { if (v.active) activeUserIds.add(String(k)) })
-  const active = Array.from(latestByUserId.values()).filter(p => activeUserIds.has(String(p.userId))).map(p => { delete p._t; return { ...p, active: true } })
+  const active = Array.from(latestByUserId.values()).filter(p => String(p.userId) === currentUserId && activeUserIds.has(String(p.userId))).map(p => { delete p._t; return { ...p, active: true } })
   res.json(active)
 })
 
@@ -905,7 +1088,13 @@ app.get('/api/status_history', auth(), async (req, res) => {
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 200
   const us = usersDb.get('users').value()
   let list = statusDb.get('status_events').value() || []
-  if (userId) list = list.filter(e => String(e.userId) === userId)
+  if (!isAdmin(req.user)) {
+    const selfId = String(req.user.id || '')
+    if (userId && userId !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    list = list.filter(e => String(e.userId || '') === selfId)
+  } else if (userId) {
+    list = list.filter(e => String(e.userId || '') === userId)
+  }
   list = list.slice().sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0)).slice(0, limit)
   const out = list.map(e => {
     const u = us.find(x => x.id === e.userId)
@@ -918,10 +1107,12 @@ app.get('/api/admin/live_locations', auth(['admin', 'inspector']), (req, res) =>
   const pts = tracksDb.get('tracks').value()
   const us = usersDb.get('users').value()
   const vs = vesselsDb.get('vessels').value()
+  const selfId = isAdmin(req.user) ? null : String(req.user.id || '')
 
   const latestByUserId = new Map()
   statusStateByUserId.forEach((st, userId) => {
     if (!st || !userId) return
+    if (selfId && String(userId) !== selfId) return
     const lat = st.lat != null ? Number(st.lat) : NaN
     const lng = st.lng != null ? Number(st.lng) : NaN
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
@@ -933,6 +1124,7 @@ app.get('/api/admin/live_locations', auth(['admin', 'inspector']), (req, res) =>
   pts.forEach(p => {
     const userId = p && p.userId ? String(p.userId) : null
     if (!userId) return
+    if (selfId && userId !== selfId) return
     const recordedAt = p.recordedAt || null
     const t = recordedAt ? new Date(recordedAt).getTime() : NaN
     if (!Number.isFinite(t)) return
@@ -1085,6 +1277,24 @@ app.get('/api/public/config', (req, res) => {
 
 const tileCache = new Map()
 const BLANK_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lmZkAAAAASUVORK5CYII=', 'base64')
+async function fetchTileWithTimeout(url, timeoutMs = 4000) {
+  if (typeof fetch !== 'function') return null
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const r = await fetch(url, { redirect: 'follow', signal: controller.signal, headers: { 'User-Agent': 'capstone-pro' } })
+    if (!r.ok) return null
+    return {
+      status: r.status,
+      contentType: r.headers.get('content-type') || 'image/png',
+      body: Buffer.from(await r.arrayBuffer())
+    }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
 app.get('/api/public/tiles/:z/:x/:y.png', async (req, res) => {
   try {
     const z = String(req.params.z || '')
@@ -1106,38 +1316,18 @@ app.get('/api/public/tiles/:z/:x/:y.png', async (req, res) => {
     }
 
     const upstream = `https://tile.openstreetmap.org/${key}.png`
-    let status = 502
     let contentType = 'image/png'
     let body = null
-    if (typeof fetch === 'function') {
-      const r = await fetch(upstream, { redirect: 'follow', headers: { 'User-Agent': 'capstone-pro' } })
-      status = r.status
-      if (r.ok) {
-        contentType = r.headers.get('content-type') || 'image/png'
-        body = Buffer.from(await r.arrayBuffer())
-      }
-    } else {
-      const result = await new Promise((resolve, reject) => {
-        const upstreamReq = https.get(upstream, { headers: { 'User-Agent': 'capstone-pro' } }, (upstreamRes) => {
-          const chunks = []
-          upstreamRes.on('data', (c) => chunks.push(c))
-          upstreamRes.on('end', () => resolve({
-            status: upstreamRes.statusCode || 502,
-            contentType: String(upstreamRes.headers['content-type'] || 'image/png'),
-            body: Buffer.concat(chunks)
-          }))
-        })
-        upstreamReq.on('error', reject)
-      })
-      status = result.status
-      contentType = result.contentType
-      body = result.body
-      if (status < 200 || status >= 300) body = null
+
+    const fetched = await fetchTileWithTimeout(upstream, 4000)
+    if (fetched) {
+      contentType = fetched.contentType
+      body = fetched.body
     }
 
     if (!body) {
       res.setHeader('Content-Type', 'image/png')
-      res.setHeader('Cache-Control', 'public, max-age=300')
+      res.setHeader('Cache-Control', 'public, max-age=60')
       return res.send(BLANK_PNG)
     }
 
@@ -1435,10 +1625,17 @@ app.get('/api/activity_logs/me', auth(), (req, res) => {
 app.get('/api/activity_logs', auth(['admin','inspector']), (req, res) => {
   const { type, userId, from, to, format } = req.query
   let list = activityDb.get('activity_logs').value()
+  if (!isAdmin(req.user)) {
+    const selfId = String(req.user.id || '')
+    if (userId && String(userId) !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    list = list.filter(a => String(a.user_id || '') === selfId)
+  } else if (userId) {
+    list = list.filter(a => String(a.user_id || '') === String(userId))
+  }
   if (type) list = list.filter(a => a.type === type)
-  if (userId) list = list.filter(a => a.user_id === userId)
   if (from) list = list.filter(a => new Date(a.created_at) >= new Date(from))
   if (to) list = list.filter(a => new Date(a.created_at) <= new Date(to))
+  list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
   if (format === 'geojson') {
     const features = []
     list.forEach(a => {
@@ -1453,13 +1650,18 @@ app.delete('/api/activity_logs/:id', auth(['admin','inspector']), (req, res) => 
   const id = req.params.id
   const exists = activityDb.get('activity_logs').find({ id }).value()
   if (!exists) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, exists.user_id)) return res.status(403).json({ error: 'Forbidden' })
   activityDb.set('activity_logs', activityDb.get('activity_logs').filter(a => a.id !== id).value()).write()
   res.json({ ok: true })
 })
 app.get('/api/admin/activity_insights', auth(['admin','inspector']), (req, res) => {
-  const logs = activityDb.get('activity_logs').value()
-  const zones = zonesDb.get('zones').value()
-  const areas = protectedAreasDb.get('protected_areas').value()
+  let logs = activityDb.get('activity_logs').value()
+  if (!isAdmin(req.user)) {
+    const selfId = String(req.user.id || '')
+    logs = logs.filter(a => String(a.user_id || '') === selfId)
+  }
+  const zones = zonesDb.get('zones').value() || []
+  const areas = protectedAreasDb.get('protected_areas').value() || []
   let illegalProtected = 0
   const illegalTypes = ['illegal_fishing','unauthorized_structures','illegal_dumping']
   logs.forEach(a => {
@@ -1467,14 +1669,19 @@ app.get('/api/admin/activity_insights', auth(['admin','inspector']), (req, res) 
       const turf = require('@turf/turf')
       const pt = turf.point([a.location.lng, a.location.lat])
       const polys = [
-        ...zones.map(z => z.geometry ? { type: 'Feature', geometry: z.geometry } : null).filter(Boolean),
-        ...areas.map(ar => ar.geom ? { type: 'Feature', geometry: ar.geom } : null).filter(Boolean)
+        ...(zones || []).map(z => z.geometry ? { type: 'Feature', geometry: z.geometry } : null).filter(Boolean),
+        ...(areas || []).map(ar => ar.geom ? { type: 'Feature', geometry: ar.geom } : null).filter(Boolean)
       ]
       if (polys.some(poly => { try { return turf.booleanPointInPolygon(pt, poly) } catch { return false } })) illegalProtected++
     }
   })
+  let alerts = alertsDb.get('alerts').value() || []
+  if (!isAdmin(req.user)) {
+    const selfId = String(req.user.id || '')
+    alerts = alerts.filter(a => String(a.userId || '') === selfId)
+  }
   const weekAgo = Date.now() - 7*24*60*60*1000
-  const approaches = alertsDb.get('alerts').filter(a => a.type === 'approach' && new Date(a.recordedAt).getTime() >= weekAgo).value().length
+  const approaches = alerts.filter(a => a.type === 'approach' && new Date(a.recordedAt || 0).getTime() >= weekAgo).length
   let patrolKm = 0
   logs.forEach(a => {
     if ((a.type === 'patrol' || a.type === 'movement_of_fishing_vessels') && Array.isArray(a.geom_line) && a.geom_line.length>1) {

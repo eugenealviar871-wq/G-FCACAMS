@@ -126,6 +126,12 @@ function auth(requiredRole) {
   }
 }
 
+function isAdmin(u) { return u && u.role === 'admin' }
+function isSelfOrAdmin(req, ownerId) {
+  if (isAdmin(req.user)) return true
+  return String(ownerId || '') === String(req.user.id || '')
+}
+
 // --- SSE BROADCASTING ---
 function broadcast(data) {
   const msg = `data: ${JSON.stringify(data)}\n\n`
@@ -178,7 +184,16 @@ app.post('/api/public/install_admin', async (req, res) => {
 })
 
 app.get('/api/vessels', auth(), async (req, res) => {
-  const { data, error } = await supabase.from('vessels').select('*').order('created_at', { ascending: false })
+  const userId = req.query && req.query.userId != null ? String(req.query.userId) : null
+  const selfId = String(req.user.id || '')
+  let q = supabase.from('vessels').select('*').order('created_at', { ascending: false })
+  if (isAdmin(req.user)) {
+    if (userId) q = q.eq('user_id', userId)
+  } else {
+    if (userId && userId !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    q = q.eq('user_id', selfId)
+  }
+  const { data, error } = await q
   if (error) return res.status(400).json({ error: error.message })
   res.json(data || [])
 })
@@ -187,6 +202,7 @@ app.get('/api/vessels/:id', auth(), async (req, res) => {
   const { data, error } = await supabase.from('vessels').select('*').eq('id', req.params.id).maybeSingle()
   if (error) return res.status(400).json({ error: error.message })
   if (!data) return res.status(404).json({ error: 'Vessel not found' })
+  if (!isSelfOrAdmin(req, data.user_id)) return res.status(403).json({ error: 'Forbidden' })
   res.json(data)
 })
 
@@ -204,7 +220,8 @@ app.post('/api/vessels', auth(), async (req, res) => {
     vessel_registration_number,
     vessel_name,
     owner_name,
-    barangay
+    barangay,
+    user_id: req.user.id
   }).select().single()
   if (error) return res.status(400).json({ error: error.message })
   res.json(data)
@@ -222,6 +239,11 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
   const duplicate = await findVesselByRegistrationSupabase(vessel_registration_number, id)
   if (duplicate) return res.status(409).json({ error: 'Vessel registration number already exists' })
 
+  const { data: existing, error: ePre } = await supabase.from('vessels').select('user_id').eq('id', id).maybeSingle()
+  if (ePre) return res.status(400).json({ error: ePre.message })
+  if (!existing) return res.status(404).json({ error: 'Vessel not found' })
+  if (!isSelfOrAdmin(req, existing.user_id)) return res.status(403).json({ error: 'Forbidden' })
+
   const { data, error } = await supabase.from('vessels').update({
     vessel_registration_number,
     vessel_name,
@@ -232,13 +254,23 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
   if (error) return res.status(400).json({ error: error.message })
   if (!data) return res.status(404).json({ error: 'Vessel not found' })
 
-  const { error: catchUpdateError } = await supabase.from('catches').update({
-    vessel: vessel_name,
-    vessel_registration_number,
-    vessel_name,
-    owner_name
-  }).eq('vessel_id', id)
-  if (catchUpdateError) return res.status(400).json({ error: catchUpdateError.message })
+  if (isAdmin(req.user)) {
+    const { error: catchUpdateError } = await supabase.from('catches').update({
+      vessel: vessel_name,
+      vessel_registration_number,
+      vessel_name,
+      owner_name
+    }).eq('vessel_id', id)
+    if (catchUpdateError) return res.status(400).json({ error: catchUpdateError.message })
+  } else {
+    const { error: catchUpdateError } = await supabase.from('catches').update({
+      vessel: vessel_name,
+      vessel_registration_number,
+      vessel_name,
+      owner_name
+    }).eq('vessel_id', id).eq('user_id', req.user.id)
+    if (catchUpdateError) return res.status(400).json({ error: catchUpdateError.message })
+  }
 
   res.json(data)
 })
@@ -286,22 +318,23 @@ app.get('/api/dashboard/stats', auth(), async (req, res) => {
   try {
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-    const startOfWeek = new Date(now.setDate(now.getDate() - 7)).toISOString()
+    const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
-    // 1. Total catch today (kg)
-    const { data: catchesToday } = await supabase.from('catches').select('weight').gte('recorded_at', startOfToday)
+    // 1. Total catch today (kg) for current user
+    const { data: catchesToday } = await supabase.from('catches').select('weight').eq('user_id', req.user.id).gte('recorded_at', startOfToday)
     const totalWeightToday = (catchesToday || []).reduce((sum, c) => sum + (Number(c.weight) || 0), 0)
 
-    // 2. Active vessels (from in-memory shim)
+    // 2. Active vessels for current user
     let activeVessels = 0
-    trackingStateByUserId.forEach(v => { if (v.active) activeVessels++ })
+    const myTracking = trackingStateByUserId.get(req.user.id)
+    if (myTracking && myTracking.active) activeVessels = 1
 
-    // 3. Total coastal activities this week
-    const { count: activitiesWeek } = await supabase.from('activity_logs').select('*', { count: 'exact', head: true }).gte('created_at', startOfWeek)
+    // 3. Total coastal activities this week for current user
+    const { count: activitiesWeek } = await supabase.from('activity_logs').select('*', { count: 'exact', head: true }).eq('user_id', req.user.id).gte('created_at', startOfWeek)
 
-    // 4. Top 3 species this month
-    const { data: monthlyCatches } = await supabase.from('catches').select('species').gte('recorded_at', startOfMonth)
+    // 4. Top 3 species this month (current user)
+    const { data: monthlyCatches } = await supabase.from('catches').select('species').eq('user_id', req.user.id).gte('recorded_at', startOfMonth)
     const speciesCounts = (monthlyCatches || []).reduce((acc, c) => {
       acc[c.species] = (acc[c.species] || 0) + 1
       return acc
@@ -311,24 +344,40 @@ app.get('/api/dashboard/stats', auth(), async (req, res) => {
       .slice(0, 3)
       .map(([name, count]) => ({ name, count }))
 
-    // 5. Monthly catch trend (last 6 months)
+    // 5. Monthly catch trend by species (last 6 months, current user)
     const trend = []
     for (let i = 5; i >= 0; i--) {
       const d = new Date()
       d.setMonth(d.getMonth() - i)
       const mStart = new Date(d.getFullYear(), d.getMonth(), 1).toISOString()
       const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString()
-      const { data: mData } = await supabase.from('catches').select('weight').gte('recorded_at', mStart).lte('recorded_at', mEnd)
-      const mWeight = (mData || []).reduce((sum, c) => sum + (Number(c.weight) || 0), 0)
-      trend.push({ month: d.toLocaleString('default', { month: 'short' }), weight: mWeight })
+      const { data: mData } = await supabase
+        .from('catches')
+        .select('species, weight')
+        .eq('user_id', req.user.id)
+        .gte('recorded_at', mStart)
+        .lte('recorded_at', mEnd)
+      const bySpecies = {}
+      ;(mData || []).forEach(c => {
+        const s = c.species || 'Unknown'
+        bySpecies[s] = (bySpecies[s] || 0) + (Number(c.weight) || 0)
+      })
+      trend.push({ month: d.toLocaleString('default', { month: 'short' }), species: bySpecies })
     }
+    const allSpecies = new Set()
+    trend.forEach(t => Object.keys(t.species).forEach(s => allSpecies.add(s)))
+    const months = trend.map(t => t.month)
+    const series = Array.from(allSpecies).map(species => ({
+      species,
+      data: trend.map(t => t.species[species] || 0)
+    }))
 
     res.json({
       totalWeightToday,
       activeVessels,
       activitiesWeek: activitiesWeek || 0,
       topSpecies,
-      trend
+      trend: { months, series }
     })
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -625,11 +674,52 @@ app.delete('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   res.json({ ok: true })
 })
 
+app.patch('/api/catches/:id', auth(), async (req, res) => {
+  const id = req.params.id
+  const { species, weightKg, lengthCm, gear, note } = req.body
+  const { data: existing, error: ePre } = await supabase.from('catches').select('user_id').eq('id', id).maybeSingle()
+  if (ePre || !existing) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, existing.user_id)) return res.status(403).json({ error: 'Forbidden' })
+  const updates = {}
+  if (species !== undefined) updates.species = species
+  if (weightKg !== undefined) updates.weight = weightKg
+  if (lengthCm !== undefined) updates.length = lengthCm
+  if (gear !== undefined) updates.gear = gear
+  if (note !== undefined) updates.notes = note
+  if (req.body.vesselId !== undefined) {
+    try {
+      const vesselInfo = await resolveCatchVesselSupabase(req.body)
+      updates.vessel_id = vesselInfo.vessel_id
+      updates.vessel = vesselInfo.vessel
+      updates.vessel_registration_number = vesselInfo.vessel_registration_number
+      updates.vessel_name = vesselInfo.vessel_name
+      updates.owner_name = vesselInfo.owner_name
+    } catch (e) {
+      return res.status(e.statusCode || 400).json({ error: e.message })
+    }
+  }
+  const { error } = await supabase.from('catches').update(updates).eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+app.delete('/api/catches/:id', auth(), async (req, res) => {
+  const id = req.params.id
+  const { data: existing, error: ePre } = await supabase.from('catches').select('user_id').eq('id', id).maybeSingle()
+  if (ePre || !existing) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, existing.user_id)) return res.status(403).json({ error: 'Forbidden' })
+  const { error } = await supabase.from('catches').delete().eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
 app.get('/api/live_locations', auth(), async (req, res) => {
-  // Return last known state from memory shim for speed
+  const currentUserId = String(req.user.id)
   const active = []
   trackingStateByUserId.forEach((v, k) => {
-    if (v.active) active.push({ userId: k, ...v.lastPoint, active: true, lastSeenAt: v.lastSeenAt })
+    if (v.active && String(k) === currentUserId) {
+      active.push({ userId: k, ...v.lastPoint, active: true, lastSeenAt: v.lastSeenAt })
+    }
   })
   res.json(active)
 })
@@ -762,7 +852,7 @@ app.get('/api/admin/live_locations', auth('admin'), async (req, res) => {
   res.json(out)
 })
 
-app.get('/api/users', auth(), async (req, res) => {
+app.get('/api/users', auth('admin'), async (req, res) => {
   const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
   if (error) return res.status(400).json({ error: error.message })
   res.json(data)
@@ -776,8 +866,14 @@ app.get('/api/admin/users', auth('admin'), async (req, res) => {
 
 app.get('/api/status_history', auth(), async (req, res) => {
   const { userId, limit } = req.query
+  const selfId = String(req.user.id || '')
   let q = supabase.from('status_events').select('*').order('at', { ascending: false }).limit(Number(limit)||50)
-  if (userId) q = q.eq('user_id', userId)
+  if (isAdmin(req.user)) {
+    if (userId) q = q.eq('user_id', userId)
+  } else {
+    if (userId && String(userId) !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    q = q.eq('user_id', selfId)
+  }
   const { data, error } = await q
   if (error) return res.status(400).json({ error: error.message })
   res.json(data)
@@ -790,6 +886,313 @@ app.get('/api/admin/status_history', auth('admin'), async (req, res) => {
   const { data, error } = await q
   if (error) return res.status(400).json({ error: error.message })
   res.json(data)
+})
+
+// --- TRACKS ENDPOINTS ---
+app.get('/api/track/me', auth(), async (req, res) => {
+  const { data, error } = await supabase
+    .from('tracks')
+    .select('*')
+    .eq('user_id', req.user.id)
+    .order('recorded_at', { ascending: false })
+  if (error) return res.status(400).json({ error: error.message })
+  res.json((data || []).map(t => ({
+    id: t.id,
+    userId: t.user_id,
+    lat: t.lat,
+    lng: t.lng,
+    accuracy: t.accuracy,
+    speed: t.speed,
+    heading: t.heading,
+    recordedAt: t.recorded_at
+  })))
+})
+
+app.get('/api/admin/tracks', auth('admin'), async (req, res) => {
+  const { data, error } = await supabase
+    .from('tracks')
+    .select('*, profiles(id, name, email)')
+    .order('recorded_at', { ascending: false })
+  if (error) return res.status(400).json({ error: error.message })
+  const list = (data || []).map(t => ({
+    id: t.id,
+    userId: t.user_id,
+    lat: t.lat,
+    lng: t.lng,
+    accuracy: t.accuracy,
+    speed: t.speed,
+    heading: t.heading,
+    recordedAt: t.recorded_at,
+    user: t.profiles ? { id: t.profiles.id, name: t.profiles.name, email: t.profiles.email } : null
+  }))
+  res.json(list)
+})
+
+app.delete('/api/admin/tracks/:id', auth('admin'), async (req, res) => {
+  const id = req.params.id
+  const { error } = await supabase.from('tracks').delete().eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+// --- SPECIES ENDPOINTS ---
+app.get('/api/species', async (req, res) => {
+  const { data, error } = await supabase.from('species').select('name').order('name')
+  if (error) return res.status(400).json({ error: error.message })
+  res.json((data || []).map(s => s.name))
+})
+
+app.get('/api/admin/species', auth('admin'), async (req, res) => {
+  const { data, error } = await supabase.from('species').select('name').order('name')
+  if (error) return res.status(400).json({ error: error.message })
+  res.json((data || []).map(s => s.name))
+})
+
+app.post('/api/admin/species', auth('admin'), async (req, res) => {
+  const { name } = req.body
+  if (!name) return res.status(400).json({ error: 'Name required' })
+  const { data: existing } = await supabase.from('species').select('name').eq('name', name).maybeSingle()
+  if (existing) return res.status(409).json({ error: 'Exists' })
+  const { error } = await supabase.from('species').insert({ name })
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+app.delete('/api/admin/species', auth('admin'), async (req, res) => {
+  const { name } = req.body
+  const { error } = await supabase.from('species').delete().eq('name', name)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+// --- ALERTS ENDPOINTS ---
+app.get('/api/admin/alerts', auth(['admin','inspector']), async (req, res) => {
+  let q = supabase
+    .from('alerts')
+    .select('*, profiles(id, name, email)')
+    .order('recorded_at', { ascending: false })
+  if (!isAdmin(req.user)) {
+    q = q.eq('user_id', req.user.id)
+  }
+  const { data, error } = await q
+  if (error) return res.status(400).json({ error: error.message })
+  const mapped = (data || []).map(a => ({
+    ...a,
+    userId: a.user_id,
+    userName: a.user_name,
+    recordedAt: a.recorded_at,
+    user: a.profiles ? { id: a.profiles.id, name: a.profiles.name, email: a.profiles.email } : null
+  }))
+  res.json(mapped)
+})
+
+app.patch('/api/admin/alerts/:id', auth(['admin','inspector']), async (req, res) => {
+  const id = req.params.id
+  const { status, note } = req.body
+  const { data: existing, error: e1 } = await supabase.from('alerts').select('*').eq('id', id).maybeSingle()
+  if (e1 || !existing) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, existing.user_id)) return res.status(403).json({ error: 'Forbidden' })
+  const next = { status: status || existing.status, note: note ?? existing.note }
+  const { error } = await supabase.from('alerts').update(next).eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+app.delete('/api/admin/alerts/:id', auth('admin'), async (req, res) => {
+  const id = req.params.id
+  const { data: existing, error: e1 } = await supabase.from('alerts').select('id').eq('id', id).maybeSingle()
+  if (e1 || !existing) return res.status(404).json({ error: 'Not found' })
+  const { error } = await supabase.from('alerts').delete().eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+app.post('/api/alerts', auth(), async (req, res) => {
+  const { type, lat, lng, note } = req.body
+  if (!type || lat == null || lng == null) return res.status(400).json({ error: 'Missing fields' })
+  const { data: profile } = await supabase.from('profiles').select('name').eq('id', req.user.id).maybeSingle()
+  const { data, error } = await supabase.from('alerts').insert({
+    type: String(type),
+    status: 'pending',
+    note: note || null,
+    user_id: req.user.id,
+    user_name: profile ? profile.name : null,
+    lat: parseFloat(lat),
+    lng: parseFloat(lng),
+    recorded_at: new Date().toISOString()
+  }).select().single()
+  if (error) return res.status(400).json({ error: error.message })
+  broadcast({ type: 'alert', item: { ...data, userId: data.user_id, userName: data.user_name, recordedAt: data.recorded_at } })
+  res.json(data)
+})
+
+app.post('/api/alerts/create', auth(), async (req, res) => {
+  const { type, lat, lng, note } = req.body
+  if (!type || lat == null || lng == null) return res.status(400).json({ error: 'Missing fields' })
+  const { data: profile } = await supabase.from('profiles').select('name').eq('id', req.user.id).maybeSingle()
+  const { data, error } = await supabase.from('alerts').insert({
+    type: String(type),
+    status: 'pending',
+    note: note || null,
+    user_id: req.user.id,
+    user_name: profile ? profile.name : null,
+    lat: parseFloat(lat),
+    lng: parseFloat(lng),
+    recorded_at: new Date().toISOString()
+  }).select().single()
+  if (error) return res.status(400).json({ error: error.message })
+  broadcast({ type: 'alert', item: { ...data, userId: data.user_id, userName: data.user_name, recordedAt: data.recorded_at } })
+  res.json(data)
+})
+
+app.get('/api/test_alerts', (req, res) => { res.json({ ok: true }) })
+
+// --- PROTECTED AREAS ENDPOINTS ---
+app.get('/api/admin/protected_areas', auth('admin'), async (req, res) => {
+  const { data, error } = await supabase
+    .from('protected_areas')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) return res.status(400).json({ error: error.message })
+  res.json((data || []).map(pa => ({
+    id: pa.id,
+    name: pa.name,
+    geom: pa.geom || pa.geometry,
+    rules: pa.rules,
+    createdAt: pa.created_at,
+    updatedAt: pa.updated_at
+  })))
+})
+
+app.post('/api/admin/protected_areas', auth('admin'), async (req, res) => {
+  const { name, geom, rules } = req.body
+  if (!geom) return res.status(400).json({ error: 'Geom required' })
+  const { data, error } = await supabase
+    .from('protected_areas')
+    .insert({ name: name || 'Unnamed Zone', geom, rules: rules || null })
+    .select('*')
+    .single()
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({
+    id: data.id,
+    name: data.name,
+    geom: data.geom,
+    rules: data.rules,
+    createdAt: data.created_at
+  })
+})
+
+app.patch('/api/admin/protected_areas/:id', auth('admin'), async (req, res) => {
+  const id = req.params.id
+  const { name, geom, rules } = req.body
+  const { data: existing, error: e1 } = await supabase.from('protected_areas').select('*').eq('id', id).maybeSingle()
+  if (e1 || !existing) return res.status(404).json({ error: 'Not found' })
+  const next = {}
+  if (name !== undefined) next.name = name
+  if (geom !== undefined) next.geom = geom
+  if (rules !== undefined) next.rules = rules
+  next.updated_at = new Date().toISOString()
+  const { error } = await supabase.from('protected_areas').update(next).eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+app.delete('/api/admin/protected_areas/:id', auth('admin'), async (req, res) => {
+  const id = req.params.id
+  const { data: existing, error: e1 } = await supabase.from('protected_areas').select('id').eq('id', id).maybeSingle()
+  if (e1 || !existing) return res.status(404).json({ error: 'Not found' })
+  const { error } = await supabase.from('protected_areas').delete().eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+// --- ACTIVITY LOGS ENDPOINTS ---
+app.get('/api/activity_logs', auth(['admin','inspector']), async (req, res) => {
+  const { type, userId, from, to, format } = req.query
+  const selfId = String(req.user.id || '')
+  let q = supabase.from('activity_logs').select('*, profiles(id, name, email)').order('created_at', { ascending: false }).limit(500)
+  if (isAdmin(req.user)) {
+    if (userId) q = q.eq('user_id', userId)
+  } else {
+    if (userId && String(userId) !== selfId) return res.status(403).json({ error: 'Forbidden' })
+    q = q.eq('user_id', selfId)
+  }
+  if (type) q = q.eq('type', type)
+  if (from) q = q.gte('created_at', from)
+  if (to) q = q.lte('created_at', to + 'T23:59:59')
+  const { data, error } = await q
+  if (error) return res.status(400).json({ error: error.message })
+  const out = (data || []).map(a => ({
+    id: a.id,
+    user_id: a.user_id,
+    userId: a.user_id,
+    type: a.type,
+    category: a.category,
+    location: a.location,
+    geom_line: a.geom_line,
+    details: a.details,
+    image_url: a.image_url,
+    photoUrl: a.image_url,
+    created_at: a.created_at,
+    user: a.profiles ? { id: a.profiles.id, name: a.profiles.name, email: a.profiles.email } : null
+  }))
+  if (format === 'geojson') {
+    const features = []
+    out.forEach(a => {
+      if (a.location && a.location.lng != null) features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [a.location.lng, a.location.lat] }, properties: { id: a.id, type: a.type, category: a.category || null, user_id: a.user_id, created_at: a.created_at } })
+      if (Array.isArray(a.geom_line)) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: a.geom_line.map(p => [p.lng, p.lat]) }, properties: { id: a.id, type: a.type, category: a.category || null, user_id: a.user_id, created_at: a.created_at } })
+    })
+    return res.json({ type: 'FeatureCollection', features })
+  }
+  res.json(out)
+})
+
+app.delete('/api/activity_logs/:id', auth(['admin','inspector']), async (req, res) => {
+  const id = req.params.id
+  const { data: existing, error: ePre } = await supabase.from('activity_logs').select('user_id').eq('id', id).maybeSingle()
+  if (ePre || !existing) return res.status(404).json({ error: 'Not found' })
+  if (!isSelfOrAdmin(req, existing.user_id)) return res.status(403).json({ error: 'Forbidden' })
+  const { error } = await supabase.from('activity_logs').delete().eq('id', id)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({ ok: true })
+})
+
+app.get('/api/admin/activity_insights', auth('admin'), async (req, res) => {
+  const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { count, error } = await supabase
+    .from('activity_logs')
+    .select('*', { count: 'exact', head: true })
+    .gte('created_at', startOfWeek)
+  if (error) return res.status(400).json({ error: error.message })
+  res.json({
+    illegal_in_protected: 0,
+    approaches_last7: count || 0,
+    patrol_km: 0
+  })
+})
+
+// --- IMAGES ENDPOINTS ---
+app.post('/api/images', auth(), async (req, res) => {
+  const { catch_id, bucket_key, exif } = req.body
+  if (!catch_id || !bucket_key) return res.status(400).json({ error: 'Missing fields' })
+  const { data, error } = await supabase
+    .from('images')
+    .insert({
+      catch_id,
+      bucket_key,
+      exif: exif || null,
+      created_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+  if (error) return res.status(400).json({ error: error.message })
+  res.json(data)
+})
+
+app.get('/api/images', auth(), async (req, res) => {
+  const { data, error } = await supabase.from('images').select('*').order('created_at', { ascending: false })
+  if (error) return res.status(400).json({ error: error.message })
+  res.json(data || [])
 })
 
 const tileCache = new Map()
