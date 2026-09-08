@@ -1,22 +1,6 @@
 -- =====================================================================
--- BFAR Monitoring — Supabase / Postgres Schema — FIXED VERSION
--- Main fixes:
---   1. Do not DROP POLICY before the tables exist.
---   2. Create vessels before catches because catches references vessels(id).
---   3. Split public SELECT and admin write policies for zones/protected_areas/species.
--- =====================================================================
-
--- Supports BOTH authentication models:
---   1. Supabase GoTrue auth (recommended if you enable it in the project)
---        profiles.id  = auth.users.id (UUID stored as TEXT)
---   2. Local / app-level JWT auth (default when SUABASE AUTH not used)
---        profiles.id  = nanoid TEXT (e.g. "yRecQ4dZf5-K8gLK4Ahcs")
--- All other `id` / `user_id` columns are TEXT — works for both.
---
--- Also enables Row Level Security (RLS) on every user-owned table
--- using `app.current_user_id` / `app.current_role` Postgres GUCs.
--- In server.supabase.js auth() middleware we SET these config vars
--- for every request so policies resolve to the logged-in inspector.
+-- BFAR Monitoring — Supabase / Postgres Schema — Migration 001
+-- Core tables + policies, runnable in this order.
 -- =====================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -25,14 +9,13 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. PROFILES (users: inspectors + admin)
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id            TEXT PRIMARY KEY,                -- Accepts UUID or nanoid TEXT
+  id            TEXT PRIMARY KEY,
   email         TEXT UNIQUE NOT NULL,
   name          TEXT,
   role          TEXT NOT NULL DEFAULT 'inspector' CHECK (role IN ('admin','inspector','snap_enumerator')),
-  password_hash TEXT,                            -- NULL if you use Supabase GoTrue auth;
-                                                  --   filled when using local JWT auth.
+  password_hash TEXT,
   barangay      TEXT,
-  fisher_id     TEXT,                            -- BFAR Registration No.
+  fisher_id     TEXT,
   municipality  TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -41,26 +24,21 @@ CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- Seed a default BFAR admin account (local JWT auth).
--- Password = "admin123" (bcrypt $2a$10$...)
--- Re-runnable (ON CONFLICT DO NOTHING).
 INSERT INTO public.profiles (id, email, name, role, password_hash)
 VALUES (
   'gzkhv4SkYxnffdWDbMT61',
   'admin@local.test',
   'BFAR System Admin',
   'admin',
-  '$2a$10$CwTycUXWue0Thq9StjUM0uJ8b9n4CqGzr/Ke/5B2nKbYxRqBnUqYW'
-) ON CONFLICT (id) DO NOTHING;
+  '$2a$10$EAmskt3pHN.UwNRQTjh9guj.TXTDgVvujgBY/XuAaz/oxH4.7Grvy'
+) ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
--- Seed two known inspector logins (alviar@gmail.com, altarejos@gmail.com — both use bcrypt hash for "alviar123")
 INSERT INTO public.profiles (id, email, name, role, password_hash)
 VALUES
-  ('yRecQ4dZf5-K8gLK4Ahcs', 'alviar@gmail.com',     'Eugene Alviar',        'inspector', '$2a$10$p7s05XmYlV1e5qPzrH2V0OaZ3VQfX7b2mHq3nN4kKjY8lZxYwRuOu'),
-  ('Kq3BZObqmXRmLtFcNfpEr', 'altarejos@gmail.com', 'Rocel T. Altarejos',   'inspector', '$2a$10$p7s05XmYlV1e5qPzrH2V0OaZ3VQfX7b2mHq3nN4kKjY8lZxYwRuOu')
-ON CONFLICT (id) DO NOTHING;
+  ('yRecQ4dZf5-K8gLK4Ahcs', 'alviar@gmail.com',     'Eugene Alviar',        'inspector', '$2a$10$jcZrB7da7l1RnkpmjSJUVedovxbcCz7VBWHW3HeQiBNRZrXFUPspW'),
+  ('Kq3BZObqmXRmLtFcNfpEr', 'altarejos@gmail.com', 'Rocel T. Altarejos',   'inspector', '$2a$10$jcZrB7da7l1RnkpmjSJUVedovxbcCz7VBWHW3HeQiBNRZrXFUPspW')
+ON CONFLICT (id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
--- RLS: Admin sees every profile; Inspector sees ONLY his own row.
 DROP POLICY IF EXISTS profiles_policy ON public.profiles;
 CREATE POLICY profiles_policy ON public.profiles
   FOR ALL
@@ -74,7 +52,7 @@ CREATE POLICY profiles_policy ON public.profiles
   );
 
 -- ---------------------------------------------------------------------
--- 3. VESSELS
+-- 2. VESSELS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.vessels (
   id                        TEXT PRIMARY KEY,
@@ -87,7 +65,6 @@ CREATE TABLE IF NOT EXISTS public.vessels (
   contact                   TEXT,
   home_port                 TEXT,
   barangay                  TEXT,
-  engine                    TEXT,
   engine_gear               TEXT,
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -97,6 +74,8 @@ CREATE INDEX IF NOT EXISTS idx_vessels_name    ON public.vessels(name);
 
 ALTER TABLE IF EXISTS public.vessels ADD COLUMN IF NOT EXISTS engine_gear TEXT;
 ALTER TABLE IF EXISTS public.vessels ADD COLUMN IF NOT EXISTS engine TEXT;
+UPDATE public.vessels SET engine = COALESCE(NULLIF(engine,''), engine_gear)
+  WHERE (engine IS NULL OR engine = '') AND engine_gear IS NOT NULL;
 
 ALTER TABLE public.vessels ENABLE ROW LEVEL SECURITY;
 
@@ -126,7 +105,7 @@ CREATE POLICY vessels_policy ON public.vessels
   );
 
 -- ---------------------------------------------------------------------
--- 2. CATCHES (core: every fish catch logged by an inspector)
+-- 3. CATCHES
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.catches (
   id            TEXT PRIMARY KEY,
@@ -157,26 +136,6 @@ CREATE TABLE IF NOT EXISTS public.catches (
 ALTER TABLE public.catches ADD COLUMN IF NOT EXISTS hours_fished NUMERIC(8,2);
 ALTER TABLE public.catches ADD COLUMN IF NOT EXISTS num_hooks_panels INTEGER;
 ALTER TABLE public.catches ADD COLUMN IF NOT EXISTS num_hauls INTEGER;
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'catches') AND
-     EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vessels') THEN
-    UPDATE public.vessels v
-    SET engine = c.gear,
-        engine_gear = COALESCE(v.engine_gear, c.gear)
-    FROM (
-      SELECT DISTINCT ON (vessel_id) vessel_id, gear
-      FROM public.catches
-      WHERE vessel_id IS NOT NULL AND gear IS NOT NULL AND gear <> ''
-      ORDER BY vessel_id, recorded_at DESC
-    ) c
-    WHERE v.id = c.vessel_id
-      AND (v.engine IS NULL OR v.engine = '')
-      AND (v.engine_gear IS NULL OR v.engine_gear = '');
-  END IF;
-END $$;
-
 CREATE INDEX IF NOT EXISTS idx_catches_user_id     ON public.catches(user_id);
 CREATE INDEX IF NOT EXISTS idx_catches_vessel_id   ON public.catches(vessel_id);
 CREATE INDEX IF NOT EXISTS idx_catches_recorded_at ON public.catches(recorded_at);
@@ -198,8 +157,32 @@ CREATE POLICY catches_policy ON public.catches
     OR (user_id = current_setting('app.current_user_id', true)::TEXT)
   );
 
+-- Now that catches exists, backfill most common per-catch gear onto vessels that lack engine_gear
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'catches')
+     AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vessels')
+     AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'catches' AND column_name = 'gear') THEN
+    UPDATE public.vessels v
+       SET engine_gear = COALESCE(NULLIF(v.engine_gear,''), x.gear)
+      FROM (
+        SELECT vessel_id,
+               mode() WITHIN GROUP (ORDER BY gear) AS gear
+          FROM public.catches
+         WHERE vessel_id IS NOT NULL
+           AND gear IS NOT NULL AND NULLIF(gear,'') IS NOT NULL
+         GROUP BY vessel_id
+      ) x
+     WHERE v.id = x.vessel_id
+       AND NULLIF(v.engine_gear,'') IS NULL;
+
+    UPDATE public.vessels SET engine = COALESCE(NULLIF(engine,''), engine_gear)
+      WHERE (engine IS NULL OR engine = '') AND engine_gear IS NOT NULL;
+  END IF;
+END $$;
+
 -- ---------------------------------------------------------------------
--- 4. TRACKS (GPS breadcrumb points)
+-- 4. TRACKS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.tracks (
   id           TEXT PRIMARY KEY,
@@ -214,7 +197,7 @@ CREATE TABLE IF NOT EXISTS public.tracks (
   speed_knots  DOUBLE PRECISION,
   heading      DOUBLE PRECISION,
   active       BOOLEAN NOT NULL DEFAULT true,
-  status       TEXT, -- 'transit' | 'port' | 'fishing'
+  status       TEXT,
   status_at    TIMESTAMPTZ,
   recorded_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -238,7 +221,7 @@ CREATE POLICY tracks_policy ON public.tracks
   );
 
 -- ---------------------------------------------------------------------
--- 5. STATUS EVENTS (vessel status transitions, SSE broadcast)
+-- 5. STATUS EVENTS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.status_events (
   id          TEXT PRIMARY KEY,
@@ -272,7 +255,7 @@ CREATE POLICY status_events_policy ON public.status_events
   );
 
 -- ---------------------------------------------------------------------
--- 6. ACTIVITY LOGS (inspector actions: catches, logins, alerts ack, etc.)
+-- 6. ACTIVITY LOGS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.activity_logs (
   id          TEXT PRIMARY KEY,
@@ -304,7 +287,7 @@ CREATE POLICY activity_logs_policy ON public.activity_logs
   );
 
 -- ---------------------------------------------------------------------
--- 7. ALERTS (SOS, zone-entry, IUU, etc.)
+-- 7. ALERTS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.alerts (
   id          TEXT PRIMARY KEY,
@@ -336,7 +319,7 @@ CREATE POLICY alerts_policy ON public.alerts
   FOR ALL
   USING (
     (current_setting('app.current_role', true) = 'admin')
-    OR (user_id IS NULL)   -- global alerts (visible to all admin, non-personal)
+    OR (user_id IS NULL)
     OR (user_id = current_setting('app.current_user_id', true)::TEXT)
   )
   WITH CHECK (
@@ -345,12 +328,12 @@ CREATE POLICY alerts_policy ON public.alerts
   );
 
 -- ---------------------------------------------------------------------
--- 8. ZONES (municipal waters, commercial zones, closed areas)
+-- 8. ZONES
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.zones (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
-  type        TEXT NOT NULL, -- municipal / commercial / closed / seasonal-closure / no-take
+  type        TEXT NOT NULL,
   color       TEXT,
   coordinates JSONB,
   geometry    JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -360,7 +343,6 @@ CREATE TABLE IF NOT EXISTS public.zones (
 
 ALTER TABLE public.zones ENABLE ROW LEVEL SECURITY;
 
--- Admin manages; inspectors may READ only.
 DROP POLICY IF EXISTS zones_policy ON public.zones;
 DROP POLICY IF EXISTS zones_select_policy ON public.zones;
 DROP POLICY IF EXISTS zones_admin_policy ON public.zones;
@@ -374,7 +356,7 @@ CREATE POLICY zones_admin_policy ON public.zones
   WITH CHECK (current_setting('app.current_role', true) = 'admin');
 
 -- ---------------------------------------------------------------------
--- 9. PROTECTED AREAS (MPA, critical habitat, etc.)
+-- 9. PROTECTED AREAS
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.protected_areas (
   id          TEXT PRIMARY KEY,
@@ -401,7 +383,7 @@ CREATE POLICY protected_areas_admin_policy ON public.protected_areas
   WITH CHECK (current_setting('app.current_role', true) = 'admin');
 
 -- ---------------------------------------------------------------------
--- 10. SPECIES (reference catalog: names, limits, conservation status)
+-- 10. SPECIES
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.species (
   id                 TEXT PRIMARY KEY,
@@ -412,7 +394,7 @@ CREATE TABLE IF NOT EXISTS public.species (
   min_length_cm      NUMERIC(10,2),
   max_length_cm      NUMERIC(10,2),
   price_per_kg       NUMERIC(12,2),
-  conservation       TEXT, -- NONE / PROTECTED / ENDANGERED / CRITICALLY_ENDANGERED
+  conservation       TEXT,
   seasonal_allowed   TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -432,14 +414,14 @@ CREATE POLICY species_admin_policy ON public.species
   WITH CHECK (current_setting('app.current_role', true) = 'admin');
 
 -- ---------------------------------------------------------------------
--- 11. IMAGES (catch evidence, activity proofs, vessel photos)
+-- 11. IMAGES
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.images (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   catch_id    TEXT REFERENCES public.catches(id) ON DELETE SET NULL,
   url         TEXT NOT NULL,
-  storage_key TEXT NOT NULL,  -- Supabase Storage key inside 'uploads' bucket
+  storage_key TEXT NOT NULL,
   width_px    INTEGER,
   height_px   INTEGER,
   exif        JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -463,7 +445,7 @@ CREATE POLICY images_policy ON public.images
   );
 
 -- ---------------------------------------------------------------------
--- 12. PUSH (web-push subscriptions for browser push notifications)
+-- 12. PUSH
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.push (
   id           TEXT PRIMARY KEY,
@@ -476,20 +458,15 @@ CREATE INDEX IF NOT EXISTS idx_push_user_id ON public.push(user_id);
 
 ALTER TABLE public.push ENABLE ROW LEVEL SECURITY;
 
--- THIS IS THE POLICY THAT WAS RETURNING HTTP 400 before —
--- because ENABLE ROW LEVEL SECURITY on public.push had not been run yet.
 DROP POLICY IF EXISTS push_policy ON public.push;
 CREATE POLICY push_policy ON public.push
   FOR ALL
   USING    (user_id = current_setting('app.current_user_id', true)::TEXT)
   WITH CHECK (user_id = current_setting('app.current_user_id', true)::TEXT);
 
--- =====================================================================
+-- ---------------------------------------------------------------------
 -- SUPABASE AUTH TRIGGER (OPTIONAL, SAFE TO RUN)
--- If you later enable GoTrue (Supabase Auth) for email/password or
--- social logins, this trigger auto-creates a public.profiles row from
--- auth.users on signup so local app code continues to work.
--- =====================================================================
+-- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -512,9 +489,15 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
--- =====================================================================
--- SUGGESTED STORAGE BUCKET
--- Run this manually once the bucket UI supports it OR run:
---   insert into storage.buckets (id, name, public) values ('uploads', 'uploads', true);
--- Then enable storage policies for authenticated writes.
--- =====================================================================
+-- ---------------------------------------------------------------------
+-- SUGGESTED STORAGE BUCKET (uploads)
+-- Only runs if storage.buckets exists (i.e., project has storage enabled)
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
+    INSERT INTO storage.buckets (id, name, public)
+    VALUES ('uploads', 'uploads', true)
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;

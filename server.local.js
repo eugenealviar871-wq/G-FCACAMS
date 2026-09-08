@@ -343,13 +343,15 @@ function normalizeText(value) {
 }
 
 function normalizeVesselRecord(record) {
+  const engine = normalizeText(record.engine || record.engine_gear)
   return {
     id: String(record.id),
     vessel_registration_number: normalizeText(record.vessel_registration_number),
     vessel_name: normalizeText(record.vessel_name),
     owner_name: normalizeText(record.owner_name),
     barangay: normalizeText(record.barangay),
-    engine_gear: normalizeText(record.engine_gear),
+    engine,
+    engine_gear: engine,
     userId: record.userId != null ? String(record.userId) : null,
     createdAt: record.createdAt || record.created_at || new Date().toISOString(),
     updatedAt: record.updatedAt || record.updated_at || new Date().toISOString()
@@ -434,7 +436,8 @@ function resolveCatchVesselLocal(body) {
       vesselRegistrationNumber: vessel.vessel_registration_number,
       vesselName: vessel.vessel_name,
       ownerName: vessel.owner_name,
-      barangay: vessel.barangay
+      barangay: vessel.barangay,
+      engine: vessel.engine || vessel.engine_gear || null
     }
   }
 
@@ -444,13 +447,13 @@ function resolveCatchVesselLocal(body) {
     vesselRegistrationNumber: normalizeText(body.vesselRegistrationNumber) || null,
     vesselName: normalizeText(body.vesselName || body.vessel) || null,
     ownerName: normalizeText(body.ownerName) || null,
-    barangay: normalizeText(body.barangay) || null
+    barangay: normalizeText(body.barangay) || null,
+    engine: normalizeText(body.engine || body.gear) || null
   }
 }
 
 function enrichCatchWithVesselLocal(catchItem) {
   let vessel = catchItem && catchItem.vesselId ? findVesselByIdLocal(catchItem.vesselId) : null
-  // If no vessel found by ID, try by registration number
   if (!vessel && catchItem && catchItem.vesselRegistrationNumber) {
     vessel = findVesselByRegistrationLocal(catchItem.vesselRegistrationNumber)
   }
@@ -460,11 +463,35 @@ function enrichCatchWithVesselLocal(catchItem) {
     vesselRegistrationNumber: catchItem.vesselRegistrationNumber || (vessel ? vessel.vessel_registration_number : null),
     vesselName: catchItem.vesselName || catchItem.vessel || (vessel ? vessel.vessel_name : null),
     ownerName: catchItem.ownerName || (vessel ? vessel.owner_name : null),
-    barangay: catchItem.barangay || (vessel ? vessel.barangay : null)
+    barangay: catchItem.barangay || (vessel ? vessel.barangay : null),
+    engine: (vessel && (vessel.engine || vessel.engine_gear)) || catchItem.engine || catchItem.gear || null
+  }
+}
+
+function backfillEngineFromCatchesToVesselsLocal() {
+  const vessels = vesselsDb.get('vessels').value() || []
+  const catches = catchesDb.get('catches').value() || []
+  const changes = []
+  vessels.forEach(v => {
+    if (normalizeText(v.engine || v.engine_gear)) return
+    const linked = catches.find(c =>
+      String(c.vesselId || '') === String(v.id) ||
+      normalizeText(c.vesselRegistrationNumber || c.vessel_registration_number) === normalizeText(v.vessel_registration_number)
+    )
+    if (linked && normalizeText(linked.engine || linked.gear)) {
+      const e = normalizeText(linked.engine || linked.gear)
+      v.engine = e
+      v.engine_gear = e
+      changes.push(v)
+    }
+  })
+  if (changes.length) {
+    vesselsDb.write()
   }
 }
 
 seedLocalVesselsFromLegacyData()
+backfillEngineFromCatchesToVesselsLocal()
 
 try {
   const admin = usersDb.get('users').find(u => u.role === 'admin').value()
@@ -760,9 +787,9 @@ app.post('/api/vessels', auth(), async (req, res) => {
   const vessel_name = normalizeText(req.body.vessel_name)
   const owner_name = normalizeText(req.body.owner_name)
   const barangay = normalizeText(req.body.barangay)
-  const engine_gear = normalizeText(req.body.engine_gear)
+  const engine = normalizeText(req.body.engine || req.body.engine_gear)
   if (!vessel_registration_number || !vessel_name || !owner_name || !barangay) {
-    return res.status(400).json({ error: 'All vessel fields are required' })
+    return res.status(400).json({ error: 'Registration #, Name, Owner, and Barangay are required' })
   }
   if (findVesselByRegistrationLocal(vessel_registration_number)) {
     return res.status(409).json({ error: 'Vessel registration number already exists' })
@@ -773,7 +800,8 @@ app.post('/api/vessels', auth(), async (req, res) => {
     vessel_name,
     owner_name,
     barangay,
-    engine_gear,
+    engine,
+    engine_gear: engine,
     userId: req.user.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -792,9 +820,9 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
   const vessel_name = normalizeText(req.body.vessel_name)
   const owner_name = normalizeText(req.body.owner_name)
   const barangay = normalizeText(req.body.barangay)
-  const engine_gear = normalizeText(req.body.engine_gear)
+  const engine = normalizeText(req.body.engine || req.body.engine_gear)
   if (!vessel_registration_number || !vessel_name || !owner_name || !barangay) {
-    return res.status(400).json({ error: 'All vessel fields are required' })
+    return res.status(400).json({ error: 'Registration #, Name, Owner, and Barangay are required' })
   }
   if (findVesselByRegistrationLocal(vessel_registration_number, id)) {
     return res.status(409).json({ error: 'Vessel registration number already exists' })
@@ -806,7 +834,8 @@ app.patch('/api/vessels/:id', auth(), async (req, res) => {
     vessel_name,
     owner_name,
     barangay,
-    engine_gear,
+    engine,
+    engine_gear: engine,
     updatedAt
   }).write()
 
@@ -837,7 +866,7 @@ app.delete('/api/vessels/:id', auth('admin'), async (req, res) => {
 })
 
 app.post('/api/catches', auth(), async (req, res) => {
-  const { species, netType, weightKg, lengthCm, gear, photoUrl, note, lat, lng, capturedAt } = req.body
+  const { species, netType, weightKg, lengthCm, gear, photoUrl, note, lat, lng, capturedAt, hoursFished, numHooksPanels, numHauls } = req.body
   if (lat == null || lng == null) return res.status(400).json({ error: 'Missing coordinates' })
   let vesselInfo
   try {
@@ -853,6 +882,9 @@ app.post('/api/catches', auth(), async (req, res) => {
     weightKg: weightKg || null,
     lengthCm: lengthCm || null,
     gear: gear || null,
+    hoursFished: hoursFished != null ? (isFinite(parseFloat(hoursFished)) ? parseFloat(hoursFished) : null) : null,
+    numHooksPanels: numHooksPanels != null ? (isFinite(parseInt(numHooksPanels)) ? parseInt(numHooksPanels) : null) : null,
+    numHauls: numHauls != null ? (isFinite(parseInt(numHauls)) ? parseInt(numHauls) : null) : null,
     vesselId: vesselInfo.vesselId,
     vessel: vesselInfo.vessel,
     vesselRegistrationNumber: vesselInfo.vesselRegistrationNumber,
@@ -889,7 +921,7 @@ app.post('/api/catches', auth(), async (req, res) => {
 const upload = multer({ dest: UPLOAD_DIR })
 app.post('/api/catches/upload', auth(), upload.single('photo'), async (req, res) => {
   try {
-    const { species, netType, weightKg, lengthCm, gear, note, lat, lng, capturedAt } = req.body
+    const { species, netType, weightKg, lengthCm, gear, note, lat, lng, capturedAt, hoursFished, numHooksPanels, numHauls } = req.body
     let latNum = lat != null ? parseFloat(lat) : null
     let lngNum = lng != null ? parseFloat(lng) : null
     if ((latNum == null || lngNum == null) && req.file) {
@@ -902,6 +934,9 @@ app.post('/api/catches/upload', auth(), upload.single('photo'), async (req, res)
       id: nanoid(), userId: req.user.id,
       species: species || 'unknown', netType: netType || null, weightKg: weightKg ? parseFloat(weightKg) : null,
       lengthCm: lengthCm ? parseFloat(lengthCm) : null, gear: gear || null,
+      hoursFished: hoursFished != null ? (isFinite(parseFloat(hoursFished)) ? parseFloat(hoursFished) : null) : null,
+      numHooksPanels: numHooksPanels != null ? (isFinite(parseInt(numHooksPanels)) ? parseInt(numHooksPanels) : null) : null,
+      numHauls: numHauls != null ? (isFinite(parseInt(numHauls)) ? parseInt(numHauls) : null) : null,
       vesselId: vesselInfo.vesselId,
       vessel: vesselInfo.vessel,
       vesselRegistrationNumber: vesselInfo.vesselRegistrationNumber,
@@ -956,7 +991,7 @@ app.get('/api/catches', auth('admin'), async (req, res) => {
 
 app.patch('/api/admin/catches/:id', auth('admin'), async (req, res) => {
   const id = req.params.id
-  const allowed = ['species','weightKg','lengthCm','gear','note']
+  const allowed = ['species','weightKg','lengthCm','gear','note','netType','hoursFished','numHooksPanels','numHauls']
   const updates = {}
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k] })
   if (req.body.vesselId !== undefined) {
@@ -988,7 +1023,7 @@ app.patch('/api/catches/:id', auth(), async (req, res) => {
   const exists = catchesDb.get('catches').find({ id }).value()
   if (!exists) return res.status(404).json({ error: 'Not found' })
   if (!isSelfOrAdmin(req, exists.userId)) return res.status(403).json({ error: 'Forbidden' })
-  const allowed = ['species','weightKg','lengthCm','gear','note']
+  const allowed = ['species','weightKg','lengthCm','gear','note','netType','hoursFished','numHooksPanels','numHauls']
   const updates = {}
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k] })
   if (req.body.vesselId !== undefined) {

@@ -319,15 +319,6 @@
               </div>
             </div>
             <div class="card" style="margin:0; padding:20px; display:flex; align-items:center; gap:16px">
-              <div style="background:rgba(52,199,89,0.1); width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--success)">
-                <i class="fa-solid fa-ship" style="font-size:20px"></i>
-              </div>
-              <div>
-                <div class="small">Active Vessels</div>
-                <div id="stat_active_vessels" style="font-size:24px; font-weight:800">0</div>
-              </div>
-            </div>
-            <div class="card" style="margin:0; padding:20px; display:flex; align-items:center; gap:16px">
               <div style="background:rgba(255,149,0,0.1); width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; color:#ff9500">
                 <i class="fa-solid fa-water" style="font-size:20px"></i>
               </div>
@@ -381,7 +372,7 @@
 
           <div class="grid-form" style="margin:0 0 16px 0">
             <div>
-              <label class="small"><i class="fa-solid fa-ship"></i> Status</label>
+              <label class="small"><i class="fa-solid fa-user"></i> Status</label>
               <select id="status_sel" onchange="onStatusChange()" style="width:100%">
                 <option value="transit">Active</option>
               </select>
@@ -447,7 +438,7 @@
           </div>
 
           <div style="margin-bottom:20px">
-            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Method & Engine</h3>
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Method & Net</h3>
             <div class="grid-form" style="margin-bottom:0">
                 <div style="grid-column:1/-1">
                 <label class="small"><i class="fa-solid fa-network-wired"></i> Net Type</label>
@@ -473,20 +464,34 @@
                     <option value="Fish Pot">
                 </datalist>
                 </div>
-                <div>
-                <label class="small"><i class="fa-solid fa-gears"></i> Engine</label>
-                <input id="gear" placeholder="e.g., 16HP" />
-                </div>
-                <div>
+                <div style="grid-column:1/-1">
                 <label class="small"><i class="fa-solid fa-ship"></i> Registered Vessel</label>
                 <input id="catch_vessel_name" list="vesselList" placeholder="Search or select a vessel..." oninput="handleVesselSearch()">
                 <datalist id="vesselList"></datalist>
                 <input type="hidden" id="catch_vessel_id">
                 </div>
                 <div style="grid-column:1/-1">
-                <div id="catch_vessel_summary" class="small" style="padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); min-height:40px; display:flex; align-items:center; color:var(--text-muted)">
+                <div id="catch_vessel_summary" class="small" style="padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); min-height:40px; display:flex; align-items:center; color:var(--text-muted); flex-wrap:wrap; gap:10px">
                   Select a registered vessel to link this catch.
                 </div>
+                </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px">
+            <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin:0 0 12px 0; font-weight:700">Fishing Effort</h3>
+            <div class="grid-form" style="margin-bottom:0">
+                <div>
+                <label class="small"><i class="fa-solid fa-clock"></i> Hours Fished</label>
+                <input id="hours_fished" placeholder="e.g., 4.5" type="number" step="0.1" min="0" />
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-anchor"></i> Number of Hooks/Panels</label>
+                <input id="num_hooks_panels" placeholder="e.g., 500" type="number" step="1" min="0" />
+                </div>
+                <div>
+                <label class="small"><i class="fa-solid fa-arrows-rotate"></i> Number of Hauls</label>
+                <input id="num_hauls" placeholder="e.g., 3" type="number" step="1" min="0" />
                 </div>
             </div>
           </div>
@@ -555,6 +560,10 @@
             <div>
               <label class="small"><i class="fa-solid fa-tag"></i> Vessel Name</label>
               <input id="vessel_name_input" placeholder="e.g., F/B Rocel" />
+            </div>
+            <div>
+              <label class="small"><i class="fa-solid fa-gears"></i> Engine</label>
+              <input id="vessel_engine" placeholder="e.g., 16HP" />
             </div>
             <div>
               <label class="small"><i class="fa-solid fa-user"></i> Owner's Name</label>
@@ -1304,12 +1313,18 @@
           const speciesSel = document.getElementById('species').value
           if (!speciesSel) { document.getElementById('catch_msg').textContent = 'Please select a species'; document.getElementById('catch_msg').className = 'small error'; return }
           const vesselId = document.getElementById('catch_vessel_id').value || null
+          const hoursFishedVal = parseFloat(document.getElementById('hours_fished').value)
+          const numHooksPanelsVal = parseInt(document.getElementById('num_hooks_panels').value)
+          const numHaulsVal = parseInt(document.getElementById('num_hauls').value)
           const payload = {
             species: speciesSel,
             netType: document.getElementById('netType').value || null,
             weightKg: parseFloat(document.getElementById('weight').value) || null,
             lengthCm: parseFloat(document.getElementById('length').value) || null,
             gear: document.getElementById('gear').value || null,
+            hoursFished: isFinite(hoursFishedVal) ? hoursFishedVal : null,
+            numHooksPanels: isFinite(numHooksPanelsVal) ? numHooksPanelsVal : null,
+            numHauls: isFinite(numHaulsVal) ? numHaulsVal : null,
             vesselId: vesselId,
             photoUrl: document.getElementById('photoUrl').value || null,
             note: document.getElementById('note').value || null,
@@ -1329,11 +1344,17 @@
         const speciesSel = document.getElementById('species').value
         if (!speciesSel) { document.getElementById('catch_msg').textContent = 'Please select a species'; document.getElementById('catch_msg').className = 'small error'; return }
         const vesselId = document.getElementById('catch_vessel_id').value || null
+        const hoursFishedVal = parseFloat(document.getElementById('hours_fished').value)
+        const numHooksPanelsVal = parseInt(document.getElementById('num_hooks_panels').value)
+        const numHaulsVal = parseInt(document.getElementById('num_hauls').value)
         fd.append('species', speciesSel)
         fd.append('netType', document.getElementById('netType').value)
         fd.append('weightKg', document.getElementById('weight').value)
         fd.append('lengthCm', document.getElementById('length').value)
         fd.append('gear', document.getElementById('gear').value)
+        if (isFinite(hoursFishedVal)) fd.append('hoursFished', hoursFishedVal)
+        if (isFinite(numHooksPanelsVal)) fd.append('numHooksPanels', numHooksPanelsVal)
+        if (isFinite(numHaulsVal)) fd.append('numHauls', numHaulsVal)
         fd.append('vesselId', vesselId)
         fd.append('note', document.getElementById('note').value)
         const loc = state.catchLoc || state.lastPos; if (loc) { fd.append('lat', loc.lat); fd.append('lng', loc.lng) }
@@ -1403,6 +1424,19 @@
             li.className = 'catch-card'
             const dateStr = new Date(c.capturedAt || c.createdAt).toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })
             const photoHtml = c.photoUrl ? `<div class="catch-thumb" style="background-image:url('${c.photoUrl}')" onclick="window.open('${c.photoUrl}','_blank')"></div>` : ''
+            const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+            const vName = c.vesselName || c.vessel || ''
+            const oName = c.ownerName || ''
+            let vesselHtml = ''
+            if (vName || oName) {
+              const parts = []
+              if (vName) parts.push(esc(vName))
+              if (oName) parts.push(esc(oName))
+              vesselHtml = `<div style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:12px;">
+                <i class="fa-solid fa-ship" style="color:var(--primary)"></i>
+                <span style="display:inline-flex; align-items:center; gap:6px; background:var(--background); border:1px solid var(--border); padding:4px 10px; border-radius:9999px; color:var(--text-main); font-weight:500;">${parts.join(' — ')}</span>
+              </div>`
+            }
             
             li.innerHTML = `
               <div class="catch-header">
@@ -1416,7 +1450,12 @@
                     ${c.weightKg ? `<span><i class="fa-solid fa-weight-hanging"></i> ${c.weightKg}kg</span>` : ''}
                     ${c.lengthCm ? `<span><i class="fa-solid fa-ruler"></i> ${c.lengthCm}cm</span>` : ''}
                     ${c.netType ? `<span><i class="fa-solid fa-network-wired"></i> ${c.netType}</span>` : ''}
+                    ${(c.hoursFished != null || c.numHooksPanels != null || c.numHauls != null) ? `</div><div class="catch-meta" style="margin-top:4px">` : ''}
+                    ${c.hoursFished != null ? `<span><i class="fa-solid fa-clock"></i> ${Number(c.hoursFished).toFixed(1)}h</span>` : ''}
+                    ${c.numHooksPanels != null ? `<span><i class="fa-solid fa-anchor"></i> ${c.numHooksPanels} hooks</span>` : ''}
+                    ${c.numHauls != null ? `<span><i class="fa-solid fa-arrows-rotate"></i> ${c.numHauls} hauls</span>` : ''}
                   </div>
+                  ${vesselHtml}
                   <div style="margin-top:auto; display:flex; align-items:center; gap:6px; font-size:12px">
                     <i class="fa-solid fa-location-dot" style="color:var(--primary)"></i>
                     <a href="https://maps.google.com/?q=${c.lat},${c.lng}" target="_blank" style="color:var(--primary)">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a>
@@ -1766,7 +1805,6 @@
 
           // Update Stats
           document.getElementById('stat_catch_today').textContent = `${(d.totalWeightToday || 0).toFixed(1)} kg`
-          document.getElementById('stat_active_vessels').textContent = d.activeVessels || 0
           document.getElementById('stat_activities_week').textContent = d.activitiesWeek || 0
 
           // Update Top Species
@@ -1962,6 +2000,7 @@
           <tr>
             <th>Registration #</th>
             <th>Vessel Name</th>
+            <th>Engine</th>
             <th>Owner</th>
             <th>Barangay</th>
             <th>Created</th>
@@ -1971,6 +2010,7 @@
             <tr>
               <td>${v.vessel_registration_number || ''}</td>
               <td>${v.vessel_name || ''}</td>
+              <td>${v.engine || v.engine_gear || ''}</td>
               <td>${v.owner_name || ''}</td>
               <td>${v.barangay || ''}</td>
               <td>${new Date(v.created_at || v.createdAt || 0).toLocaleDateString()}</td>
@@ -1995,6 +2035,7 @@
           (v.vessel_registration_number || '').toLowerCase().includes(query) ||
           (v.vessel_name || '').toLowerCase().includes(query) ||
           (v.owner_name || '').toLowerCase().includes(query) ||
+          (v.engine || v.engine_gear || '').toLowerCase().includes(query) ||
           (v.barangay || '').toLowerCase().includes(query)
         )
         renderVessels(filtered)
@@ -2003,12 +2044,13 @@
       async function saveVessel() {
         const regNum = document.getElementById('vessel_registration_number').value.trim()
         const name = document.getElementById('vessel_name_input').value.trim()
+        const engine = document.getElementById('vessel_engine').value.trim()
         const owner = document.getElementById('vessel_owner_name').value.trim()
         const barangay = document.getElementById('vessel_barangay').value.trim()
         const msgEl = document.getElementById('vessel_form_msg')
         
         if (!regNum || !name || !owner || !barangay) {
-          msgEl.textContent = 'All fields are required'
+          msgEl.textContent = 'Registration #, Name, Owner, and Barangay are required'
           msgEl.className = 'small error'
           return
         }
@@ -2019,13 +2061,13 @@
             r = await fetch(`/api/vessels/${editingVesselId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
-              body: JSON.stringify({ vessel_registration_number: regNum, vessel_name: name, owner_name: owner, barangay })
+              body: JSON.stringify({ vessel_registration_number: regNum, vessel_name: name, engine, owner_name: owner, barangay })
             })
           } else {
             r = await fetch('/api/vessels', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.token },
-              body: JSON.stringify({ vessel_registration_number: regNum, vessel_name: name, owner_name: owner, barangay })
+              body: JSON.stringify({ vessel_registration_number: regNum, vessel_name: name, engine, owner_name: owner, barangay })
             })
           }
           
@@ -2051,6 +2093,7 @@
         editingVesselId = id
         document.getElementById('vessel_registration_number').value = vessel.vessel_registration_number
         document.getElementById('vessel_name_input').value = vessel.vessel_name
+        document.getElementById('vessel_engine').value = vessel.engine || vessel.engine_gear || ''
         document.getElementById('vessel_owner_name').value = vessel.owner_name
         document.getElementById('vessel_barangay').value = vessel.barangay || ''
         document.getElementById('vessel_cancel_btn').style.display = 'inline-block'
@@ -2060,6 +2103,7 @@
         editingVesselId = null
         document.getElementById('vessel_registration_number').value = ''
         document.getElementById('vessel_name_input').value = ''
+        document.getElementById('vessel_engine').value = ''
         document.getElementById('vessel_owner_name').value = ''
         document.getElementById('vessel_barangay').value = ''
         document.getElementById('vessel_cancel_btn').style.display = 'none'

@@ -293,8 +293,6 @@
           <button data-module="mod_tracks" onclick="showAdminModule('mod_tracks')"><i class="fa-solid fa-route icon"></i><span class="menu-label">Tracks</span><span class="menu-badge" data-badge-for="mod_tracks" hidden></span></button>
           <button data-module="mod_map" onclick="showAdminModule('mod_map')"><i class="fa-solid fa-map-location-dot icon"></i><span class="menu-label">Map</span></button>
           <button data-module="mod_species" onclick="showAdminModule('mod_species')"><i class="fa-solid fa-fish-fins icon"></i><span class="menu-label">Species</span><span class="menu-badge" data-badge-for="mod_species" hidden></span></button>
-          <button data-module="mod_zones" onclick="showAdminModule('mod_zones')"><i class="fa-solid fa-shield-halved icon"></i><span class="menu-label">Protected Zones</span><span class="menu-badge" data-badge-for="mod_zones" hidden></span></button>
-          <button data-module="mod_alerts" onclick="showAdminModule('mod_alerts')"><i class="fa-solid fa-bell icon"></i><span class="menu-label">Active</span><span class="menu-badge" data-badge-for="mod_alerts" hidden></span></button>
           <button data-module="mod_exports" onclick="showAdminModule('mod_exports')"><i class="fa-solid fa-file-export icon"></i><span class="menu-label">Exports</span><span class="menu-badge" data-badge-for="mod_exports" hidden></span></button>
           <button data-module="mod_live" onclick="showAdminModule('mod_live')"><i class="fa-solid fa-satellite-dish icon"></i><span class="menu-label">Live</span><span class="menu-badge" data-badge-for="mod_live" hidden></span></button>
           <button data-module="mod_vessels" onclick="showAdminModule('mod_vessels')"><i class="fa-solid fa-ship icon"></i><span class="menu-label">Vessels</span><span class="menu-badge" data-badge-for="mod_vessels" hidden></span></button>
@@ -302,7 +300,7 @@
         </div>
       </div>
       <div id="content">
-      <div id="content_top"><button id="menu_btn" onclick="toggleDrawer(true)"><img src="/logo.svg" alt="" style="height:18px"/> Home</button><button id="refresh_btn" onclick="refreshDataAdmin()"><i class="fa-solid fa-rotate-right"></i> Refresh</button><button id="install_btn_admin" style="display:none" onclick="installAdminApp()"><i class="fa-solid fa-download"></i> Install App</button></div>
+      <div id="content_top"><button id="menu_btn" onclick="goAdminHome()"><i class="fa-solid fa-house" style="margin-right:6px"></i> Home</button><button id="refresh_btn" onclick="refreshDataAdmin(true)"><i class="fa-solid fa-rotate-right"></i> Refresh</button><button id="install_btn_admin" style="display:none" onclick="installAdminApp()"><i class="fa-solid fa-download"></i> Install App</button></div>
         <div class="card" id="mod_users" style="display:none">
           <h2><i class="fa-solid fa-users" style="color:var(--primary)"></i> Users</h2>
           
@@ -537,7 +535,7 @@
         return count > 99 ? '99+' : String(count)
       }
       function refreshSidebarBadges() {
-        const modules = ['mod_users','mod_catches','mod_tracks','mod_species','mod_zones','mod_alerts','mod_exports','mod_live','mod_vessels','mod_activity']
+        const modules = ['mod_users','mod_catches','mod_tracks','mod_species','mod_exports','mod_live','mod_vessels','mod_activity']
         state.unreadCounts = {}
         modules.forEach(moduleId => {
           const badge = document.querySelector(`[data-badge-for="${moduleId}"]`)
@@ -687,7 +685,7 @@
         }
       }
       function showAdminModule(id) {
-        const ids = ['mod_users','mod_catches','mod_tracks','mod_map','mod_species','mod_zones','mod_alerts','mod_exports','mod_vessels','mod_live','mod_activity']
+        const ids = ['mod_users','mod_catches','mod_tracks','mod_map','mod_species','mod_exports','mod_vessels','mod_live','mod_activity']
         ids.forEach(x => { const el = document.getElementById(x); if (el) el.style.display = x===id ? '' : 'none' })
         const btns = document.querySelectorAll('#sidebar button'); btns.forEach(b => b.classList.toggle('active', b.dataset.module === id))
         state.currentModule = id
@@ -710,14 +708,28 @@
         clearInterval(state.mapPollTimer)
         state.mapPollTimer = null
       }
-      function refreshDataAdmin(){
+      function refreshDataAdmin(explicitClick){
         if (!state.token || window._authInvalidated) return
-        // Don't auto-refresh if the user is currently editing a catch
-        if (document.querySelector('tr[data-id] select')) return
+        if (!explicitClick && document.querySelector('tr[data-id] select')) return
         try { loadData() } catch {}
         const m = state.currentModule
         if (m === 'mod_activity') { try { loadActivity() } catch {} }
         if (m === 'mod_vessels') { try { loadVesselsAdmin() } catch {} }
+        if (m === 'mod_map') { try { refreshUserMap(true) } catch {} }
+        if (m === 'mod_species') { try { reloadSpecies() } catch {} }
+        if (m === 'mod_live') { try { ensureLive(true) } catch {} }
+        if (typeof explicitClick === 'boolean' && explicitClick) {
+          const flashBtn = document.getElementById('refresh_btn')
+          if (flashBtn) {
+            flashBtn.style.transition = 'transform 0.4s ease'
+            flashBtn.style.transform = 'rotate(360deg)'
+            setTimeout(() => { if (flashBtn) flashBtn.style.transform = '' }, 500)
+          }
+        }
+      }
+      function goAdminHome(){
+        showAdminModule('mod_map')
+        toggleDrawer(false)
       }
       function setupAutoRefreshAdmin(){
         if (state.refreshTimer) clearInterval(state.refreshTimer)
@@ -1088,13 +1100,16 @@
         renderTracksSummary(filtered)
       }
 
-      function startEditCatch(id, species, note, weight, length, netType, engine, vessel) {
+      function startEditCatch(id, species, note, weight, length, netType, engine, vessel, hoursFished, numHooksPanels, numHauls) {
         const row = document.querySelector(`tr[data-id="${id}"]`); if (!row) return
         const sp = row.querySelector('.sp'); 
         const wt = row.querySelector('.wt'); 
         const ln = row.querySelector('.ln');
         const nt = row.querySelector('.nt');
         const gr = row.querySelector('.gr');
+        const hf = row.querySelector('.hf');
+        const nhp = row.querySelector('.nhp');
+        const nh = row.querySelector('.nh');
         const vs = row.querySelector('.vs');
         const act = row.querySelector('.act')
         
@@ -1104,6 +1119,9 @@
         const lnId = `ln_${id}`;
         const ntId = `nt_${id}`;
         const grId = `gr_${id}`;
+        const hfId = `hf_${id}`;
+        const nhpId = `nhp_${id}`;
+        const nhId = `nh_${id}`;
         const vsId = `vs_${id}`;
         
         const opts = (state.species||[]).map(s => `<option ${s===species?'selected':''}>${s}</option>`).join('') || `<option ${species?'selected':''}>${species||'unknown'}</option>`
@@ -1113,11 +1131,14 @@
         ln.innerHTML = `<input id="${lnId}" type="number" step="0.1" value="${length||''}" style="width:60px"/>`
         if (nt) nt.innerHTML = `<input id="${ntId}" value="${netType||''}" style="width:100%"/>`
         if (gr) gr.innerHTML = `<input id="${grId}" value="${engine||''}" style="width:100%"/>`
+        if (hf) hf.innerHTML = `<input id="${hfId}" type="number" step="0.1" min="0" value="${hoursFished!=null?hoursFished:''}" style="width:60px"/>`
+        if (nhp) nhp.innerHTML = `<input id="${nhpId}" type="number" step="1" min="0" value="${numHooksPanels!=null?numHooksPanels:''}" style="width:70px"/>`
+        if (nh) nh.innerHTML = `<input id="${nhId}" type="number" step="1" min="0" value="${numHauls!=null?numHauls:''}" style="width:60px"/>`
         vs.innerHTML = `<input id="${vsId}" value="${vessel||''}" style="width:100%"/>`
         
-        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${ntId}','${grId}','${vsId}')">Save</button> <button onclick="if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) { loadCatchHistory() } else { loadData() }">Cancel</button>`
+        act.innerHTML = `<button onclick="saveCatch('${id}','${selId}','${noteId}','${wtId}','${lnId}','${ntId}','${grId}','${vsId}','${hfId}','${nhpId}','${nhId}')">Save</button> <button onclick="if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) { loadCatchHistory() } else { loadData() }">Cancel</button>`
       }
-      async function saveCatch(id, selId, noteId, wtId, lnId, ntId, grId, vsId) {
+      async function saveCatch(id, selId, noteId, wtId, lnId, ntId, grId, vsId, hfId, nhpId, nhId) {
         const species = document.getElementById(selId).value
         const note = document.getElementById(noteId).value
         const weightKg = parseFloat(document.getElementById(wtId).value) || null
@@ -1125,11 +1146,17 @@
         const netType = document.getElementById(ntId) ? (document.getElementById(ntId).value || null) : null
         const gear = document.getElementById(grId) ? (document.getElementById(grId).value || null) : null
         const vessel = document.getElementById(vsId).value || null
+        const hfEl = document.getElementById(hfId)
+        const nhpEl = document.getElementById(nhpId)
+        const nhEl = document.getElementById(nhId)
+        const hoursFished = hfEl && hfEl.value !== '' ? (isFinite(parseFloat(hfEl.value)) ? parseFloat(hfEl.value) : null) : null
+        const numHooksPanels = nhpEl && nhpEl.value !== '' ? (isFinite(parseInt(nhpEl.value)) ? parseInt(nhpEl.value) : null) : null
+        const numHauls = nhEl && nhEl.value !== '' ? (isFinite(parseInt(nhEl.value)) ? parseInt(nhEl.value) : null) : null
         
         await fetch('/api/admin/catches/'+id, { 
           method:'PATCH', 
           headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+state.token }, 
-          body: JSON.stringify({ species, note, weightKg, lengthCm, netType, gear, vessel }) 
+          body: JSON.stringify({ species, note, weightKg, lengthCm, netType, gear, vessel, hoursFished, numHooksPanels, numHauls }) 
         })
         if (state.currentCatchHistoryUserId || state.currentCatchHistoryVesselId) {
           loadCatchHistory()
@@ -1910,8 +1937,10 @@
            refreshSidebarBadges()
            return
          }
-         const thumb = c.photoUrl ? `<a target="_blank" href="${c.photoUrl}"><img src="${c.photoUrl}" style="height:40px;border-radius:4px"/></a>` : ''
-         const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="nt">${c.netType || ''}</td><td class="gr">${c.gear || ''}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.netType||'').replace(/"/g,'&quot;')}','${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
+         const thumb = c.photoUrl
+           ? `<a target="_blank" rel="noopener" href="${c.photoUrl}" title="Open full-size photo"><img src="${c.photoUrl}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:block" alt="Catch photo" onerror="this.outerHTML='<div style=&quot;width:50px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px dashed var(--border);background:var(--background);color:var(--text-muted)&quot; title=&quot;Photo unavailable&quot;><i class=&quot;fa-solid fa-image&quot; style=&quot;font-size:16px&quot;></i></div>'"/></a>`
+           : `<div style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px dashed var(--border);background:var(--background);color:var(--text-muted)" title="No Photo"><i class="fa-solid fa-camera-slash" style="font-size:16px"></i></div>`
+         const row = `<tr data-id="${c.id}"><td>${c.user ? c.user.name : c.userId}</td><td>${thumb}</td><td class="sp">${c.species}</td><td class="nt">${c.netType || ''}</td><td class="gr">${c.gear || ''}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</a></td><td>${new Date(c.capturedAt).toLocaleString()}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.netType||'').replace(/"/g,'&quot;')}','${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}',${c.hoursFished!=null?c.hoursFished:'null'},${c.numHooksPanels!=null?c.numHooksPanels:'null'},${c.numHauls!=null?c.numHauls:'null'})">Edit</button> <button onclick="deleteCatch('${c.id}')">Delete</button></td></tr>`
          ct.insertRow(1).outerHTML = row
          if (!state.catches) state.catches = []
          if (!state.catches.some(x => x.id === c.id)) state.catches.unshift(c)
@@ -2345,9 +2374,9 @@
           <div style="max-height:50vh; overflow:auto; border:1px solid var(--border); border-radius:12px">
             <table id="catch_history_table" style="margin-top:0">
               <thead>
-                <tr><th>Species</th><th>Weight</th><th>Length</th><th>Net</th><th>Engine</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>
+                <tr><th>Photo</th><th>Species</th><th>Weight</th><th>Length</th><th>Net</th><th>Engine</th><th>Hrs</th><th>Hooks</th><th>Hauls</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>
               </thead>
-              <tbody><tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</td></tr></tbody>
+              <tbody><tr><td colspan="13" style="text-align:center; padding:20px; color:var(--text-muted)">Loading...</td></tr></tbody>
             </table>
           </div>
           <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px">
@@ -2387,7 +2416,7 @@
           updateCatchHistoryUserInfo(userId, vesselId)
         } catch (e) {
           const tbl = document.getElementById('catch_history_table')
-          if (tbl) tbl.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:20px; color:var(--error)">${e.message || 'Failed to load history'}</td></tr>`
+          if (tbl) tbl.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:20px; color:var(--error)">${e.message || 'Failed to load history'}</td></tr>`
         }
       }
 
@@ -2422,18 +2451,24 @@
         tbl.innerHTML = ''
         if (thead) tbl.appendChild(thead)
         else {
-          tbl.innerHTML = '<tr><th>Species</th><th>Weight</th><th>Length</th><th>Net</th><th>Engine</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
+          tbl.innerHTML = '<tr><th>Photo</th><th>Species</th><th>Weight</th><th>Length</th><th>Net</th><th>Engine</th><th>Hrs</th><th>Hooks</th><th>Hauls</th><th>Vessel</th><th>Coords</th><th>Captured</th><th>Action</th></tr>'
         }
         const tbody = tbl.querySelector('tbody') || document.createElement('tbody')
         tbody.innerHTML = ''
         if (!state.catchHistory || state.catchHistory.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:20px; color:var(--text-muted)">No catch records found.</td></tr>'
+          tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; padding:20px; color:var(--text-muted)">No catch records found.</td></tr>'
         } else {
           state.catchHistory.forEach(c => {
             const date = c.capturedAt ? new Date(c.capturedAt) : (c.createdAt ? new Date(c.createdAt) : null)
             const captured = date ? date.toLocaleString() : '—'
             const coordStr = c.lat != null && c.lng != null ? `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}` : '—'
-            tbody.innerHTML += `<tr data-id="${c.id}"><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="nt">${c.netType || ''}</td><td class="gr">${c.gear || ''}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${coordStr}</a></td><td>${captured}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.netType||'').replace(/"/g,'&quot;')}','${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}')">Edit</button> <button onclick="confirmDeleteCatchHistoryTrack('${c.id}')">Delete</button></td></tr>`
+            const hrs = c.hoursFished != null ? Number(c.hoursFished).toFixed(1) : ''
+            const hooks = c.numHooksPanels != null ? c.numHooksPanels : ''
+            const hauls = c.numHauls != null ? c.numHauls : ''
+            const photoCell = c.photoUrl
+              ? `<a target="_blank" rel="noopener" href="${c.photoUrl}" title="Open full-size photo"><img src="${c.photoUrl}" style="width:50px;height:50px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:block" alt="Catch photo" onerror="this.outerHTML='<div style=&quot;width:50px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px dashed var(--border);background:var(--background);color:var(--text-muted)&quot; title=&quot;Photo unavailable&quot;><i class=&quot;fa-solid fa-image&quot; style=&quot;font-size:16px&quot;></i></div>'"/></a>`
+              : `<div style="width:50px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px dashed var(--border);background:var(--background);color:var(--text-muted)" title="No Photo"><i class="fa-solid fa-camera-slash" style="font-size:16px"></i></div>`
+            tbody.innerHTML += `<tr data-id="${c.id}"><td>${photoCell}</td><td class="sp">${c.species}</td><td class="wt">${c.weightKg || ''}</td><td class="ln">${c.lengthCm || ''}</td><td class="nt">${c.netType || ''}</td><td class="gr">${c.gear || ''}</td><td class="hf">${hrs}</td><td class="nhp">${hooks}</td><td class="nh">${hauls}</td><td class="vs">${c.vesselName || c.vessel || ''}</td><td><a target="_blank" href="https://maps.google.com/?q=${c.lat},${c.lng}">${coordStr}</a></td><td>${captured}</td><td class="act"><button onclick="startEditCatch('${c.id}','${c.species}','${(c.note||'').replace(/\"/g,'&quot;')}',${c.weightKg||null},${c.lengthCm||null},'${(c.netType||'').replace(/"/g,'&quot;')}','${(c.gear||'').replace(/"/g,'&quot;')}','${(c.vessel||'').replace(/"/g,'&quot;')}',${c.hoursFished!=null?c.hoursFished:'null'},${c.numHooksPanels!=null?c.numHooksPanels:'null'},${c.numHauls!=null?c.numHauls:'null'})">Edit</button> <button onclick="confirmDeleteCatchHistoryTrack('${c.id}')">Delete</button></td></tr>`
           })
         }
         if (!tbl.querySelector('tbody')) tbl.appendChild(tbody)
@@ -2467,8 +2502,11 @@
           marker.addTo(map)
           const netStr = c.netType || '—'
           const engineStr = c.gear || '—'
+          const hrsStr = c.hoursFished != null ? Number(c.hoursFished).toFixed(1) : '—'
+          const hooksStr = c.numHooksPanels != null ? c.numHooksPanels : '—'
+          const haulsStr = c.numHauls != null ? c.numHauls : '—'
           const date = c.capturedAt ? new Date(c.capturedAt) : (c.createdAt ? new Date(c.createdAt) : null)
-          marker.bindPopup(`<b>${c.species}</b><br/><b>Weight:</b> ${c.weightKg || '—'}<br/><b>Length:</b> ${c.lengthCm || '—'}<br/><b>Net:</b> ${netStr}<br/><b>Engine:</b> ${engineStr}<br/><b>Vessel:</b> ${c.vesselName || c.vessel || '—'}<br/><b>Time:</b> ${date ? date.toLocaleString() : '—'}<br/><b>Coords:</b> ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`)
+          marker.bindPopup(`<b>${c.species}</b><br/><b>Weight:</b> ${c.weightKg || '—'}<br/><b>Length:</b> ${c.lengthCm || '—'}<br/><b>Net:</b> ${netStr}<br/><b>Engine:</b> ${engineStr}<br/><b>Hrs Fished:</b> ${hrsStr}<br/><b>Hooks/Panels:</b> ${hooksStr}<br/><b>Hauls:</b> ${haulsStr}<br/><b>Vessel:</b> ${c.vesselName || c.vessel || '—'}<br/><b>Time:</b> ${date ? date.toLocaleString() : '—'}<br/><b>Coords:</b> ${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`)
           state.catchHistoryMap.markersByUserId.set(c.id, marker)
         })
         
